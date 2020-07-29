@@ -6,31 +6,21 @@ Copyright (c) 2020, Carter J. Humphreys All rights reserved.
 
 
 """
-
-
-import io
-import os
-import os.path, time
-import glob
 import math
 import pytz
 import xarray
 import smtplib, ssl
 import numpy as np
 import pandas as pd
-import urllib.request as request
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.pyplot as plt
-import cartopy.io.img_tiles as cimgt
 from datetime import datetime, timedelta
 from metpy.plots import USCOUNTIES
 from metpy.units import units
 from shapely.geometry import Point, Polygon
-from urllib.request import urlopen, Request
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from PIL import Image
 
 
 ##############################################################################################################
@@ -43,7 +33,7 @@ local_timezone='US/Eastern' # Timezone list: https://gist.github.com/heyalexej/8
 distance_units='mile'
 
 # Map settings
-lat, lon = 43.11, -76.11
+lat, lon, city_name = 42.38, -76.87, 'Watkins Glen'
 latitude_offset=0.75
 longitude_offset=1.5
 range_rings = [5, 10, 30]
@@ -57,25 +47,17 @@ email_address='from@mail.com'
 email_password='password'
 send_to_emails=['send_to@mail.com']
 
-# Specify GLM data directory
-glm_data_path='data/'
+# Specify GLM data path
+glm_data_path='/home/humphreys/workspace/NOAAPort-GLM-Data/data/latest.nc'
 
 # Specify output path for GLM plots/database
-output_path='html/'
+output_path='/home/humphreys/weather.carterhumphreys.com/bin/'
 
 
 ##############################################################################################################
 
 # Average radius of the earth
 earth_r=6371*units.km
-    
-def image_spoof(self, tile):
-    req = Request(self._image_url(tile))
-    req.add_header('User-agent','Anaconda 3')
-    fh = urlopen(req) 
-    im_data = io.BytesIO(fh.read())
-    fh.close()
-    return Image.open(im_data).convert(self.desired_tile_form), self.tileextent(tile), 'lower' # reformat for cartopy
 
 def createRangeRing(lat, lon, distance, unit='km'):
     coords=[]
@@ -227,11 +209,11 @@ def sendNotification(status, ring, telemetry=None):
         time_local=pytz.utc.localize(datetime.utcnow()).astimezone(pytz.timezone(local_timezone))
         if status == 'clear':      
             text=f'*** All Clear ***'
-            text+=f'\n{ring}-{distance_units} radius of {lat}, {lon} clear for {clear_time_min}-min at {time_local.strftime("%I:%M %p %Z %a %b %d %Y")}.'
+            text+=f'\n{ring}-{distance_units} radius of {city_name} clear for {clear_time_min}-min at {time_local.strftime("%I:%M %p %Z %a %b %d %Y")}.'
             
             
         elif status == 'alert':
-            text+=f'*** Lightning Detected within {ring} {distance_units} of {lat}, {lon} ***'
+            text+=f'*** Lightning Detected within {ring} {distance_units} of {city_name} ***'
             text+=f'\n{time_local.strftime("%I:%M %p %Z %a %b %d %Y")}'
             text+='\n'
             if telemetry!=None:
@@ -282,10 +264,6 @@ def makePlot(glm_flash_data, range_ring_coords):
 
     # Add county borders:
     ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
-     
-    # Add map background
-    cimgt.Stamen.get_image = image_spoof
-    ax.add_image(cimgt.Stamen('terrain'), 9, interpolation='spline36')
 
     # Plot Title
     plt.title(f'GLM Flashes Last {max_flash_age_min}-min', loc='left')
@@ -328,8 +306,7 @@ glm_flash_data=pd.read_csv(f'{output_path}/glm_flash_data.csv', parse_dates=['Da
 range_ring_trends=pd.read_csv(f'{output_path}/range_ring_trends.csv', parse_dates=['DateTime'])
 
 # Update flash database
-glm_data_file = max(glob.glob(f'{glm_data_path}/OR_GLM_*.nc'), key=os.path.getctime)
-new_flash_data=getGLM_Flash_Data(glm_data_file)
+new_flash_data=getGLM_Flash_Data(glm_data_path)
 glm_flash_data=glm_flash_data.append(new_flash_data)
 
 # Remove old data from databases
