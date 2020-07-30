@@ -15,6 +15,7 @@ import pandas as pd
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 import matplotlib.pyplot as plt
+from shutil import copyfile
 from datetime import datetime, timedelta
 from metpy.plots import USCOUNTIES
 from metpy.units import units
@@ -48,7 +49,7 @@ email_port = 465
 smtp_server = 'mail.carterhumphreys.com'
 email_address='lightning.notifications@carterhumphreys.com'
 email_password='VQ.nFZl#c!x1'
-send_to_emails=['chumphre@oswego.edu']
+send_to_emails=['carter.humphreys@mods-for-grx.com']
 
 # Specify GLM data path
 glm_data_path='/home/humphreys/workspace/NOAAPort-GLM-Data/data/latest.nc'
@@ -123,8 +124,8 @@ def getGLM_Flash_Data(glm_file):
 
             # Add flash to database    
             glm_flash_data=glm_flash_data.append({'DateTime':glm_data.product_time.data, 
-                                                  'Latitude':flash_lat.data, 
-                                                  'Longitude':flash_lon.data, 
+                                                  'Latitude':float(flash_lat.data), 
+                                                  'Longitude':float(flash_lon.data), 
                                                   'Distance':strike_distance.magnitude, 
                                                   'Direction':brng},                                         
                          ignore_index=True)
@@ -262,9 +263,8 @@ def makePlot(glm_flash_data, range_ring_coords):
         plt.plot(ring_lons, ring_lats, c='k', linestyle='--', linewidth=2.5, transform=ccrs.PlateCarree())
 
     # Plot GLM flash data
-    #size_scaler=flash_size*(1-(glm_flash_data.DataAge/max_flash_age_min))
     glm_plot=plt.scatter(glm_flash_data.Longitude, glm_flash_data.Latitude, c=glm_flash_data.DataAge, vmin=0, vmax=max_flash_age_min,
-                s=flash_size, marker=flash_marker, label='GLM Flash', cmap='inferno_r', transform=ccrs.PlateCarree())
+                s=flash_size, marker=flash_marker, label='GLM Flash', cmap='plasma_r', transform=ccrs.PlateCarree())
     
     # Add color bar
     cbar=plt.colorbar(glm_plot, orientation='horizontal', shrink=0.75, pad=0.05)
@@ -281,18 +281,20 @@ def makePlot(glm_flash_data, range_ring_coords):
     plt.title(f'GLM Flashes Last {max_flash_age_min}-min', loc='left')
     time_local=pytz.utc.localize(datetime.utcnow()).astimezone(pytz.timezone(local_timezone))
     plt.title(f'Updated: {time_local.strftime("%I:%M %p %Z %a %b %d %Y")}', loc='right')
-
+    
+    # Export image and close plot
     plt.savefig(f'{output_path}/glm_map.png', bbox_inches='tight', dpi=100)
-    plt.savefig(f'{output_path}/archive/glm_map_{datetime.utcnow():%Y%m%d_%H%M}.png', bbox_inches='tight', dpi=100)
     plt.clf()
-    plt.close()
+    plt.close() 
+    
+    # Copy file to archive
+    copyfile(f'{output_path}/glm_map.png', f'{output_path}/archive/glm_map_{datetime.utcnow():%Y%m%d_%H%M}.png')
 
 # Create plot of GLM flash trends
 def plotTrend(trend_data):
     
     # Setup plot
     trend_data.plot(figsize=(8, 10), kind='line', x='DateTime')
-    
     plt.ylabel(f'Flashes Last {clear_time_min} Minutes')
     plt.xlabel('')
     plt.ylim(bottom=0)
@@ -306,7 +308,8 @@ def plotTrend(trend_data):
     plt.title(f'{max_flash_age_min}-min Lightning Trends', loc='left')
     time_local=pytz.utc.localize(datetime.utcnow()).astimezone(pytz.timezone(local_timezone))
     plt.title(f'Updated: {time_local.strftime("%I:%M %p %Z %a %b %d %Y")}', loc='right')
-
+    
+    # Export image and close plot
     plt.savefig(f'{output_path}/glm_trend.png', bbox_inches='tight', dpi=100)
     plt.clf()
     plt.close()
