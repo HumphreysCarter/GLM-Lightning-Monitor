@@ -40,18 +40,21 @@ range_rings = [5, 10, 30]
 flash_marker='+'
 flash_size=100
 
+# Animation Settings
+animation_duration_minutes=30
+
 # Notification settings
 email_port = 465
-smtp_server = 'server'
-email_address='from@mail.com'
-email_password='password'
-send_to_emails=['send_to@mail.com']
+smtp_server = 'mail.carterhumphreys.com'
+email_address='lightning.notifications@carterhumphreys.com'
+email_password='VQ.nFZl#c!x1'
+send_to_emails=['chumphre@oswego.edu']
 
 # Specify GLM data path
 glm_data_path='/home/humphreys/workspace/NOAAPort-GLM-Data/data/latest.nc'
 
 # Specify output path for GLM plots/database
-output_path='/home/humphreys/weather.carterhumphreys.com/bin/'
+output_path='/home/humphreys/weather.carterhumphreys.com/glm/'
 
 
 ##############################################################################################################
@@ -232,6 +235,15 @@ def sendNotification(status, ring, telemetry=None):
         with smtplib.SMTP_SSL(smtp_server, email_port, context=context) as server:
             server.login(email_address, email_password)
             server.sendmail(email_address, receiver_email, message.as_string())
+            
+# Export file name list for animation
+def exportFileNames():
+    f = open(f'{output_path}/glm-list.txt', 'w')
+    time=datetime.utcnow()-timedelta(minutes=animation_duration_minutes)
+    while time <= datetime.utcnow():
+        f.write(f'/glm/archive/glm_map_{time:%Y%m%d_%H%M}.png\n')
+        time+=timedelta(minutes=1)
+    f.close()
 
 # Create map plot of GLM flashes
 def makePlot(glm_flash_data, range_ring_coords):
@@ -271,6 +283,7 @@ def makePlot(glm_flash_data, range_ring_coords):
     plt.title(f'Updated: {time_local.strftime("%I:%M %p %Z %a %b %d %Y")}', loc='right')
 
     plt.savefig(f'{output_path}/glm_map.png', bbox_inches='tight', dpi=100)
+    plt.savefig(f'{output_path}/archive/glm_map_{datetime.utcnow():%Y%m%d_%H%M}.png', bbox_inches='tight', dpi=100)
     plt.clf()
     plt.close()
 
@@ -345,5 +358,6 @@ range_ring_trends.to_csv(f'{output_path}/range_ring_trends.csv', index=False)
 checkAlertStatus(range_rings, glm_flash_data, range_ring_trends)
     
 # Make plots
+exportFileNames()
 plotTrend(range_ring_trends)
 makePlot(glm_flash_data, range_ring_coords)
