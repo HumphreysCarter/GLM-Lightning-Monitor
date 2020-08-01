@@ -347,10 +347,12 @@ def plotFreqChart(ring_freq):
 # Plot proximity of lightning
 def plotProximityChart(glm_flash_data):
 
-        
     # Get only flashes in last x minutes
     max_data_time=datetime.utcnow()-timedelta(minutes=flash_proximity_time_min)
     glm_flash_data=glm_flash_data.loc[glm_flash_data.DateTime >= max_data_time]
+    
+    # Only flashes within max range ring
+    glm_flash_data=glm_flash_data.loc[glm_flash_data.Distance <= max(range_rings)]
     
     # Get mean distance
     d=glm_flash_data.mean().Distance
