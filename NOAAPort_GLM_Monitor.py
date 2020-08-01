@@ -34,7 +34,7 @@ local_timezone='US/Eastern' # Timezone list: https://gist.github.com/heyalexej/8
 distance_units='mile'
 
 # Map settings
-lat, lon, city_name = 42.38, -76.87, 'Watkins Glen'
+lat, lon, city_name = 42.38, -76.87, 'Watkins Glen, NY'
 latitude_offset=0.75
 longitude_offset=1.5
 range_rings = [5, 10, 30]
@@ -43,6 +43,9 @@ flash_size=100
 
 # Animation Settings
 animation_duration_minutes=30
+
+# Proximity settings
+flash_proximity_time_min=10
 
 # Notification settings
 email_port = 465
@@ -63,6 +66,13 @@ output_path='/home/humphreys/weather.carterhumphreys.com/glm/'
 # Average radius of the earth
 earth_r=6371*units.km
 
+# Source: https://gist.github.com/RobertSudwarts/acf8df23a16afdb5837f
+def degrees_to_cardinal(d):
+    dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+    ix = round(d / (360. / len(dirs)))
+    return dirs[ix % len(dirs)]
+
+# Creates range rings based on lat, lon and distance
 def createRangeRing(lat, lon, distance, unit='km'):
     coords=[]
     lat=math.radians(lat)
@@ -143,8 +153,19 @@ def GetAreaFlashCount(glm_flash_data, coords, max_data_age=30):
     for flash_lat, flash_lon in zip(glm_flash_data.Latitude, glm_flash_data.Longitude):
         if Point(flash_lat, flash_lon).within(coords):
             flash_count+=1
+            
+    # Determine lightning frequency
+    flash_freq=flash_count/max_data_age
+    flash_freq_desc='NONE'
+    
+    if flash_freq > 0 and flash_freq < 1:
+        flash_freq_desc='OCNL'
+    elif flash_freq >= 1 and flash_freq <= 6:
+        flash_freq_desc='FREQ'
+    elif flash_freq > 6:
+        flash_freq_desc='CONS'
         
-    return flash_count
+    return flash_count, flash_freq, flash_freq_desc
 
 def checkAlertStatus(range_rings, glm_flash_data, range_ring_trends):
     for range_ring in range_rings:
@@ -157,7 +178,6 @@ def checkAlertStatus(range_rings, glm_flash_data, range_ring_trends):
             telemetry=getFlashTelemetry(glm_flash_data)
             sendNotification(status='alert', ring=range_ring, telemetry=telemetry)
             
-
         # Lightning cleared ring ---> send all clear
         elif curr_flash_count == 0 and prev_flash_count > 0:
             sendNotification(status='clear', ring=range_ring)
@@ -203,6 +223,16 @@ def getFlashTelemetry(glm_flash_data):
 
 # Send email notifications
 def sendNotification(status, ring, telemetry=None):
+    # Get current local time
+    time_local=pytz.utc.localize(datetime.utcnow()).astimezone(pytz.timezone(local_timezone))
+    
+    # Send message to log
+    if status == 'clear':
+        exportAlertList(f'{time_local.strftime("%I:%M %p %Z %a %b %d %Y")}: {ring}-{distance_units} radius of {city_name} clear for {clear_time_min}-min')
+    elif status == 'alert':
+        exportAlertList(f'{time_local.strftime("%I:%M %p %Z %a %b %d %Y")}: Lightning Detected within {ring} {distance_units} of {city_name}')
+    
+    # Send email message
     for receiver_email in send_to_emails:
         message = MIMEMultipart('alternative')
         message['Subject'] = 'GLM Lightning Notification'
@@ -210,11 +240,9 @@ def sendNotification(status, ring, telemetry=None):
         message['To'] = receiver_email
         
         text=''
-        time_local=pytz.utc.localize(datetime.utcnow()).astimezone(pytz.timezone(local_timezone))
-        if status == 'clear':      
+        if status == 'clear':   
             text=f'*** All Clear ***'
             text+=f'\n{ring}-{distance_units} radius of {city_name} clear for {clear_time_min}-min at {time_local.strftime("%I:%M %p %Z %a %b %d %Y")}.'
-            
             
         elif status == 'alert':
             text+=f'*** Lightning Detected within {ring} {distance_units} of {city_name} ***'
@@ -229,8 +257,9 @@ def sendNotification(status, ring, telemetry=None):
                 text+=f'\nBearing:  {round(bearing, 0)} deg'
                 text+=f'\nSpeed:    {round(speed, 0)} {distance_units}/hr'
         
+        # Attached message
         message.attach(MIMEText(text, "plain"))
-
+        
         # Create secure connection with server and send email
         context = ssl.create_default_context()
         with smtplib.SMTP_SSL(smtp_server, email_port, context=context) as server:
@@ -245,6 +274,13 @@ def exportFileNames():
         f.write(f'/glm/archive/glm_map_{time:%Y%m%d_%H%M}.png\n')
         time+=timedelta(minutes=1)
     f.close()
+    
+# Exports alerts to file
+def exportAlertList(alert):
+    with open(f'{output_path}/glm-alert-list.txt', 'r+') as f:
+        content = f.read()
+        f.seek(0, 0)
+        f.write(alert + '\n' + content)
 
 # Create map plot of GLM flashes
 def makePlot(glm_flash_data, range_ring_coords):
@@ -290,11 +326,69 @@ def makePlot(glm_flash_data, range_ring_coords):
     # Copy file to archive
     copyfile(f'{output_path}/glm_map.png', f'{output_path}/archive/glm_map_{datetime.utcnow():%Y%m%d_%H%M}.png')
 
+# Plot lightning frequency chart
+def plotFreqChart(ring_freq):
+    colormap={'NONE':'green', 'OCNL':'yellow', 'FREQ':'orange', 'CONS':'red'}
+    
+    # Create figure and axes
+    fig, axs = plt.subplots(1, 3, figsize=(10, 1))
+    for ax, freq, d in zip(axs, ring_freq, range_rings):
+        ax.set_title(f'{d}-{distance_units} Radius', fontsize=15)
+        ax.text(0.5, 0.5, freq, horizontalalignment='center', verticalalignment='center', fontsize=20)
+        ax.set_facecolor(colormap[freq]) 
+        ax.get_xaxis().set_visible(False)
+        ax.get_yaxis().set_visible(False)
+        
+    # Export image and close plot
+    plt.savefig(f'{output_path}/glm_freq_chart.png', bbox_inches='tight', dpi=50)
+    plt.clf()
+    plt.close()
+    
+# Plot proximity of lightning
+def plotProximityChart(glm_flash_data):
+
+        
+    # Get only flashes in last x minutes
+    max_data_time=datetime.utcnow()-timedelta(minutes=flash_proximity_time_min)
+    glm_flash_data=glm_flash_data.loc[glm_flash_data.DateTime >= max_data_time]
+    
+    # Get mean distance
+    d=glm_flash_data.mean().Distance
+    proximity='NONE DETECTED'
+    color='green'
+    
+    # Get proximity from distance
+    if d <= 5:
+        proximity='LTG OHD'
+        color='red'
+    elif d > 5 and d <= 10:
+        proximity='LTG VC'
+        color='orange'
+    elif d > 10:
+        deg=int(glm_flash_data.mean().Direction)
+        proximity=f'LTG DSNT {degrees_to_cardinal(deg)}'
+        color='yellow'
+
+    # Create figure and axes
+    fig, ax = plt.subplots(1, figsize=(10, 1))
+
+    ax.set_title(f'Lightning Proximity', fontsize=15)
+    ax.text(0.5, 0.5, proximity, horizontalalignment='center', verticalalignment='center', fontsize=20)
+    ax.set_facecolor(color) 
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+        
+    # Export image and close plot
+    plt.savefig(f'{output_path}/glm_proximity.png', bbox_inches='tight', dpi=50)
+    plt.clf()
+    plt.close()
+    
+
 # Create plot of GLM flash trends
 def plotTrend(trend_data):
     
     # Setup plot
-    trend_data.plot(figsize=(8, 10), kind='line', x='DateTime')
+    trend_data.plot(figsize=(8, 5), kind='line', x='DateTime')
     plt.ylabel(f'Flashes Last {clear_time_min} Minutes')
     plt.xlabel('')
     plt.ylim(bottom=0)
@@ -334,7 +428,6 @@ range_ring_trends=range_ring_trends.loc[range_ring_trends.DateTime >= max_data_t
 glm_flash_data['DataAge'] = datetime.utcnow()-glm_flash_data.DateTime
 glm_flash_data['DataAge'] = [t/np.timedelta64(1, 'm') for t in glm_flash_data['DataAge'].values]
 
-
 # Build range rings
 range_ring_coords = []
 for range_ring in range_rings: 
@@ -342,10 +435,12 @@ for range_ring in range_rings:
 
 # Update lightning trends
 current_trend={'DateTime':datetime.utcnow()}
+ring_freq=[]
 for range_ring, coords in zip(range_rings, range_ring_coords):
     
     # Check for lightning in range rings
-    flash_count=GetAreaFlashCount(glm_flash_data, coords, clear_time_min)
+    flash_count, flash_freq, flash_freq_desc=GetAreaFlashCount(glm_flash_data, coords, clear_time_min)
+    ring_freq.append(flash_freq_desc)
     
     # Save flash count to dataframe
     current_trend[f'{range_ring}-{distance_units} Flash Count']=flash_count
@@ -362,5 +457,7 @@ checkAlertStatus(range_rings, glm_flash_data, range_ring_trends)
     
 # Make plots
 exportFileNames()
+plotProximityChart(glm_flash_data)
+plotFreqChart(ring_freq)
 plotTrend(range_ring_trends)
 makePlot(glm_flash_data, range_ring_coords)
