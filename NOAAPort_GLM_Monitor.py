@@ -45,7 +45,7 @@ flash_size=100
 animation_duration_minutes=30
 
 # Proximity settings
-flash_proximity_time_min=10
+flash_proximity_time_min=30
 
 # Notification settings
 email_port = 465
@@ -364,7 +364,7 @@ def plotProximityChart(glm_flash_data):
     elif d > 5 and d <= 10:
         proximity='LTG VC'
         color='orange'
-    elif d > 10:
+    elif d > 10 and d <= 30:
         deg=int(glm_flash_data.mean().Direction)
         proximity=f'LTG DSNT {degrees_to_cardinal(deg)}'
         color='yellow'
