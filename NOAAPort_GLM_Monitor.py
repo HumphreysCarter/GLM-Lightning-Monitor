@@ -6,6 +6,7 @@ Copyright (c) 2020, Carter J. Humphreys All rights reserved.
 
 
 """
+import io
 import math
 import pytz
 import xarray
@@ -14,6 +15,7 @@ import numpy as np
 import pandas as pd
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+import cartopy.io.img_tiles as cimgt
 import matplotlib.pyplot as plt
 from shutil import copyfile
 from datetime import datetime, timedelta
@@ -22,6 +24,8 @@ from metpy.units import units
 from shapely.geometry import Point, Polygon
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from urllib.request import urlopen, Request
+from PIL import Image
 
 
 ##############################################################################################################
@@ -281,6 +285,17 @@ def exportAlertList(alert):
         content = f.read()
         f.seek(0, 0)
         f.write(alert + '\n' + content)
+                        
+def image_spoof(self, tile): # this function pretends not to be a Python script
+    url = self._image_url(tile) # get the url of the street map API
+    req = Request(url) # start request
+    req.add_header('User-agent','Anaconda 3') # add user agent to request
+    fh = urlopen(req) 
+    im_data = io.BytesIO(fh.read()) # get image
+    fh.close() # close url
+    img = Image.open(im_data) # open image with PIL
+    img = img.convert(self.desired_tile_form) # set image format
+    return img, self.tileextent(tile), 'lower' # reformat for cartopy
 
 # Create map plot of GLM flashes
 def makePlot(glm_flash_data, range_ring_coords):
@@ -312,6 +327,12 @@ def makePlot(glm_flash_data, range_ring_coords):
 
     # Add county borders:
     ax.add_feature(USCOUNTIES.with_scale('5m'), edgecolor='black', linewidth=0.5)
+                        
+    # Add map background
+    cimgt.OSM.get_image = image_spoof # reformat web request for street map spoofing
+    osm_img = cimgt.OSM() # spoofed, downloaded street map
+    ax.add_image(osm_img, 9, interpolation='spline36', regrid_shape=2000) # add OSM with zoom specification
+
 
     # Plot Title
     plt.title(f'GLM Flashes Last {max_flash_age_min}-min', loc='left')
