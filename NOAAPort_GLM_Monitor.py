@@ -351,14 +351,26 @@ def makePlot(glm_flash_data, range_ring_coords):
 def plotFreqChart(ring_freq):
     colormap={'NONE':'green', 'OCNL':'yellow', 'FREQ':'orange', 'CONS':'red'}
     
-    # Create figure and axes
-    fig, axs = plt.subplots(1, 3, figsize=(10, 1))
-    for ax, freq, d in zip(axs, ring_freq, range_rings):
-        ax.set_title(f'{d}-{distance_units} Radius', fontsize=15)
-        ax.text(0.5, 0.5, freq, horizontalalignment='center', verticalalignment='center', fontsize=20)
-        ax.set_facecolor(colormap[freq]) 
-        ax.get_xaxis().set_visible(False)
-        ax.get_yaxis().set_visible(False)
+   if len(range_rings) > 0:
+
+       # Create figure and axes
+       fig, axs = plt.subplots(1, len(range_rings), figsize=(10, 1))
+
+       if len(range_rings) == 1:
+           axs.set_title(f'{range_rings[0]}-{distance_units} Radius', fontsize=15)
+           axs.text(0.5, 0.5, ring_freq[0], horizontalalignment='center', verticalalignment='center', fontsize=20)
+           axs.set_facecolor(colormap[ring_freq[0]]) 
+           axs.get_xaxis().set_visible(False)
+           axs.get_yaxis().set_visible(False)
+
+       else:
+
+           for ax, freq, d in zip(axs, ring_freq, range_rings):
+               ax.set_title(f'{d}-{distance_units} Radius', fontsize=15)
+               ax.text(0.5, 0.5, freq, horizontalalignment='center', verticalalignment='center', fontsize=20)
+               ax.set_facecolor(colormap[freq]) 
+               ax.get_xaxis().set_visible(False)
+               ax.get_yaxis().set_visible(False)
         
     # Export image and close plot
     plt.savefig(f'{output_path}/glm_freq_chart.png', bbox_inches='tight', dpi=50)
