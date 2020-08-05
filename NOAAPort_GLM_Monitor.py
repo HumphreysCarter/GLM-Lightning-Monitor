@@ -348,29 +348,37 @@ def makePlot(glm_flash_data, range_ring_coords):
     copyfile(f'{output_path}/glm_map.png', f'{output_path}/archive/glm_map_{datetime.utcnow():%Y%m%d_%H%M}.png')
 
 # Plot lightning frequency chart
-def plotFreqChart(ring_freq):
+def plotFreqChart(ring_freq, usePlainLanguage=False):
     colormap={'NONE':'green', 'OCNL':'yellow', 'FREQ':'orange', 'CONS':'red'}
+    plain_language={'NONE':'NONE', 'OCNL':'OCCASIONAL', 'FREQ':'FREQUENT', 'CONS':'CONTINUOUS'}
     
-   if len(range_rings) > 0:
+    if len(range_rings) > 0:
 
        # Create figure and axes
        fig, axs = plt.subplots(1, len(range_rings), figsize=(10, 1))
 
        if len(range_rings) == 1:
            axs.set_title(f'{range_rings[0]}-{distance_units} Radius', fontsize=15)
-           axs.text(0.5, 0.5, ring_freq[0], horizontalalignment='center', verticalalignment='center', fontsize=20)
+           text=ring_freq[0]
+           if usePlainLanguage:
+              text=plain_language[text]
+           axs.text(0.5, 0.5, text, horizontalalignment='center', verticalalignment='center', fontsize=20)
            axs.set_facecolor(colormap[ring_freq[0]]) 
            axs.get_xaxis().set_visible(False)
            axs.get_yaxis().set_visible(False)
 
        else:
-
            for ax, freq, d in zip(axs, ring_freq, range_rings):
                ax.set_title(f'{d}-{distance_units} Radius', fontsize=15)
+               if usePlainLanguage:
+                    freq=plain_language[freq]
                ax.text(0.5, 0.5, freq, horizontalalignment='center', verticalalignment='center', fontsize=20)
                ax.set_facecolor(colormap[freq]) 
                ax.get_xaxis().set_visible(False)
                ax.get_yaxis().set_visible(False)
+              
+    # Background
+    fig.patch.set_alpha(0.0)
         
     # Export image and close plot
     plt.savefig(f'{output_path}/glm_freq_chart.png', bbox_inches='tight', dpi=50)
@@ -378,7 +386,7 @@ def plotFreqChart(ring_freq):
     plt.close()
     
 # Plot proximity of lightning
-def plotProximityChart(glm_flash_data):
+def plotProximityChart(glm_flash_data, usePlainLanguage=False):
 
     # Get only flashes in last x minutes
     max_data_time=datetime.utcnow()-timedelta(minutes=flash_proximity_time_min)
@@ -395,13 +403,19 @@ def plotProximityChart(glm_flash_data):
     # Get proximity from distance
     if d <= 5:
         proximity='LTG OHD'
+        if usePlainLanguage:
+              proximity='LIGHTNING OVERHEAD'
         color='red'
     elif d > 5 and d <= 10:
         proximity='LTG VC'
+        if usePlainLanguage:
+              proximity='LIGHTNING IN VICINITY'
         color='orange'
     elif d > 10 and d <= 30:
         deg=int(glm_flash_data.mean().Direction)
         proximity=f'LTG DSNT {degrees_to_cardinal(deg)}'
+        if usePlainLanguage:
+              proximity=f'LIGHTNING DISTANT {degrees_to_cardinal(deg)}'
         color='yellow'
 
     # Create figure and axes
@@ -412,6 +426,9 @@ def plotProximityChart(glm_flash_data):
     ax.set_facecolor(color) 
     ax.get_xaxis().set_visible(False)
     ax.get_yaxis().set_visible(False)
+              
+    # Background
+    fig.patch.set_alpha(0.0)
         
     # Export image and close plot
     plt.savefig(f'{output_path}/glm_proximity.png', bbox_inches='tight', dpi=50)
