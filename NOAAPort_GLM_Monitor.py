@@ -395,8 +395,8 @@ def plotProximityChart(glm_flash_data, usePlainLanguage=False):
     # Only flashes within max range ring
     glm_flash_data=glm_flash_data.loc[glm_flash_data.Distance <= max(range_rings)]
     
-    # Get mean distance
-    d=glm_flash_data.mean().Distance
+    # Get minimum distance
+    d=glm_flash_data.min().Distance
     proximity='NONE DETECTED'
     color='green'
     
