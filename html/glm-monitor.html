@@ -1,0 +1,39 @@
+<html>
+  <head>
+  	<title>GLM Lightning Monitor</title>
+  	<meta charset="UTF-8">
+  	<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  	<meta http-equiv="Pragma" content="no-cache">
+  	<meta http-equiv="Expires" content="0">
+  	<link rel="stylesheet" type="text/css" href="/css/test.css">
+  	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin=""/>
+  	<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
+  	<script src="../javascript/leaflet.ajax.min.js"></script>
+  </head>
+
+  <body>
+    <h5 id="page_header">&nbsp;GLM Lightning Monitor</h5>
+
+    MRMS Dataset Overlay:&nbsp;
+    <select id="model" name="Model" required="required" onchange="updateOptions()">
+        <option value="NLDN_CG_001min_AvgDensity">CG Average Lightning Density 1-min - NLDN</option>
+        <option value="NLDN_CG_005min_AvgDensity">CG Average Lightning Density 5-min - NLDN</option>
+        <option value="NLDN_CG_015min_AvgDensity">CG Average Lightning Density 15-min - NLDN</option>
+        <option value="NLDN_CG_030min_AvgDensity"> 	CG Average Lightning Density 30-min - NLDN</option>
+        <option value="LightningProbabilityNext30minGrid">Lightning Probability 0-30 minutes - NLDN</option>
+        <option value="LightningProbabilityNext60minGrid"> Lightning Probability 0-30 minutes - NLDN</option>
+        <option value="LightningJumpGrid">Rapid lightning increases and decreases</option>
+        <option value="LightningJumpGrid_Max_005min">Rapid lightning increases and decreases over 5-minutes</option>
+        <option value="ReflectivityAtLowestAltitude">Reflectivity At Lowest Altitude</option>
+        <option value="MergedReflectivityQCComposite">Composite Reflectivity Mosaic</option>
+    </select> &nbsp;
+
+    <button onclick="updateImagePath()">Update Plot</button>&nbsp;
+
+    </br></br>
+
+    <div id="map" style="width: 1100px; height: 700px;"></div>
+    <script type="text/javascript" src="../javascript/glm-monitor.js"></script>
+
+  </body>
+</html>
