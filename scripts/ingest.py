@@ -1,19 +1,35 @@
-from geojson import Feature, Point, FeatureCollection
 import xarray as xr
+from glob import glob
+from geojson import Feature, Point, FeatureCollection
 
 # Directories
-data_path  = '/home/awips/glm/latest'
-output_dir = '/home/awips/send2web/glm/'
+data_path    = '/data/goes/'
+output_dir   = '/data/web/glm/'
+num_of_files = 10
 
-# Open lightning dataset
-ds = xr.open_dataset(data_path)
+# Get GLM datasets
+glmFiles = glob(f'{data_path}/OR_GLM-L2-LCFA_G16_*.nc')
 
-# Get lat/lon for each flash
+# Create empty list to store flash data
 flash_data = []
-for lat, lon in zip(ds.flash_lat.data, ds.flash_lon.data):
-    lon, lat = float(lon), float(lat)
 
-    flash_data.append(Feature(geometry=Point((lon, lat))))
+# Get flash data for each file
+updateTime = None
+for i in range(num_of_files):
+    if i < len(glmFiles):
+
+        # Open lightning dataset
+        ds = xr.open_dataset(glmFiles[-i])
+
+        # Update product times
+        if updateTime == None:
+            updateTime = str(ds.product_time.data)
+
+        # Get lat/lon for each flash
+        for lat, lon in zip(ds.flash_lat.data, ds.flash_lon.data):
+            lon, lat = float(lon), float(lat)
+
+            flash_data.append(Feature(geometry=Point((lon, lat))))
 
 # Save data to GeoJSON
 with open(f'{output_dir}/glm.json', 'w') as f:
@@ -22,4 +38,4 @@ with open(f'{output_dir}/glm.json', 'w') as f:
 
 # Update file with time
 with open(f'{output_dir}/glm_update.txt', 'w') as f:
-    f.write(str(ds.product_time.data))
+    f.write(updateTime)
