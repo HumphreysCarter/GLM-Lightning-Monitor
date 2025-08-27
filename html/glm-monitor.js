@@ -13,9 +13,9 @@ const statusEl = $('status');
 const refreshBtn = $('refresh');
 
 // ====== Leaflet map ======
-const map = L.map('map', {worldCopyJump: true}).setView([37.5, -96], 4);
+const map = L.map('map', {worldCopyJump: true, minZoom: 8}).setView([ 5.22, -97.43], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 12,
+    maxZoom: 14,
     attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
 const layer = L.layerGroup().addTo(map);
@@ -37,6 +37,52 @@ let lastStatusBase = 'Idle.';  // base message we append countdown to
 
 // --- Persist / restore map view ---
 const STORAGE_KEYS = {view: 'glm:view'};
+STORAGE_KEYS.view       = STORAGE_KEYS.view || 'glm:view';
+STORAGE_KEYS.ringsOn    = 'glm:rings:on';
+STORAGE_KEYS.ringsMax   = 'glm:rings:max';
+STORAGE_KEYS.ringsCenter= 'glm:rings:center';
+
+// --- Range rings ---
+const ringsEl        = $('rings');
+const ringsMaxEl     = $('ringsMax');
+const ringsCenterBtn = $('ringsCenter');
+const ringsStatusEl  = $('ringsStatus');
+
+const MI_TO_M = 1609.344;
+const RING_STEP_MI = 10;
+
+const ringsLayer = L.layerGroup().addTo(map);
+// If null → rings follow map center; if set → pinned center {lat, lng}
+let ringCenter = null;
+
+
+
+function saveRingsState() {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ringsOn, ringsEl.checked ? '1' : '0');
+    localStorage.setItem(STORAGE_KEYS.ringsMax, String(ringsMaxEl.value || '100'));
+    if (ringCenter) {
+      localStorage.setItem(STORAGE_KEYS.ringsCenter, JSON.stringify(ringCenter));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ringsCenter);
+    }
+  } catch {}
+}
+
+function restoreRingsState() {
+  try {
+    const on  = localStorage.getItem(STORAGE_KEYS.ringsOn);
+    const mx  = localStorage.getItem(STORAGE_KEYS.ringsMax);
+    const cen = localStorage.getItem(STORAGE_KEYS.ringsCenter);
+    if (on !== null) ringsEl.checked = on === '1';
+    if (mx !== null) ringsMaxEl.value = mx;
+    if (cen) {
+      const v = JSON.parse(cen);
+      if (Number.isFinite(v?.lat) && Number.isFinite(v?.lng)) ringCenter = { lat: v.lat, lng: v.lng };
+    }
+  } catch {}
+}
+
 
 function saveMapView() {
     try {
@@ -148,6 +194,34 @@ function popupHtml(p) {
     <div style="color:#6b7280">${fmt(p.source_file)}</div>
   `;
 }
+
+function drawRings() {
+  ringsLayer.clearLayers();
+  if (!ringsEl.checked) { ringsStatusEl.textContent = ''; return; }
+
+  const maxMi = Math.max(RING_STEP_MI, Math.min(500, Number(ringsMaxEl.value || 100)));
+  const c = ringCenter || map.getCenter();
+
+  // Concentric rings every 10 miles
+  for (let mi = RING_STEP_MI; mi <= maxMi; mi += RING_STEP_MI) {
+    L.circle([c.lat, c.lng], {
+      radius: mi * MI_TO_M,
+      color: '#0ea5e9',
+      weight: 1,
+      fill: false,
+      dashArray: '4,4',
+      interactive: false
+    }).addTo(ringsLayer);
+  }
+
+  // Center marker
+  L.circleMarker([c.lat, c.lng], {
+    radius: 4, weight: 2, color: '#0ea5e9', fillColor: '#fff', fillOpacity: 1, interactive: false
+  }).addTo(ringsLayer);
+
+  ringsStatusEl.textContent = `Center ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)} · ${maxMi} mi`;
+}
+
 
 // ====== Fetch & render ======
 async function fetchAndRender() {
@@ -264,10 +338,23 @@ map.on('moveend', () => {
     // always persist the latest view
     saveMapView();
 
+    if (!ringCenter) {    // follow map center unless pinned
+    drawRings();
+  }
+
     // refetch
     if (moveDebounce) clearTimeout(moveDebounce);
     moveDebounce = setTimeout(fetchAndRender, 250);
 });
+
+ringsEl.addEventListener('change', () => { saveRingsState(); drawRings(); });
+ringsMaxEl.addEventListener('change', () => { saveRingsState(); drawRings(); });
+ringsCenterBtn.addEventListener('click', () => {
+  ringCenter = map.getCenter();  // pin to current view center
+  saveRingsState();
+  drawRings();
+});
+
 
 // ====== Initial boot ======
 intervalEl.value = DEFAULT_AUTO_SEC;
@@ -275,6 +362,8 @@ autoEl.checked = true;
 
 // restore view from previous session (if any) BEFORE first fetch
 restoreMapView();
+restoreRingsState(); // pull from localStorage if present
+drawRings();         // draw initial rings state
 
 fetchAndRender();
 startAuto();
