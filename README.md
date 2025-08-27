@@ -1,5 +1,7 @@
 # GLM Lightning Monitor
 
+![Monitor webpage example](docs/monitor_example.png)
+
 ## Installation
 
 ### Requirements
