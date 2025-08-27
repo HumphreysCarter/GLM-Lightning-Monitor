@@ -14,3 +14,7 @@ $ git clone https://github.com/HumphreysCarter/GLM-Lightning-Monitor.git
 $ cd GLM-Lightning-Monitor
 $ docker compose up --build
 ```
+
+## Usage
+
+Once running, the application will be available at [localhost:8080](http://localhost:8080/).
