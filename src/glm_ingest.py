@@ -1,4 +1,5 @@
 import os
+import time
 import boto3
 import heapq
 import logging
@@ -9,7 +10,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
-from settings import DB_PATH
+from settings import DB_PATH, INGEST_REFRESH_SECONDS
 
 
 # Configure logging
@@ -193,6 +194,12 @@ def init_database():
         'CREATE INDEX IF NOT EXISTS idx_flashes_time_first ON glm_flashes(flash_time_offset_of_first_event)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_flashes_time_legacy ON glm_flashes(flash_time_offset)')
 
+    # Indexes for deletes
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_created ON glm_events(created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_groups_created ON glm_groups(created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_flashes_created ON glm_flashes(created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_processing_log_time ON processing_log(processing_time)')
+
     conn.commit()
     conn.close()
     logger.info(f'Database initialized: {DB_PATH}')
@@ -367,6 +374,55 @@ def get_data_summary() -> Dict[str, int]:
     return summary
 
 
+def purge_old_data(max_age_hours: int = 12, vacuum: bool = True) -> dict:
+    '''
+    Delete rows older than max_age_hours based on created_at/processing_time.
+    Returns counts deleted per table. Optionally VACUUMs to reclaim disk space.
+    '''
+    if max_age_hours <= 0:
+        raise ValueError('max_age_hours must be > 0')
+
+    cutoff_clause = f'-{int(max_age_hours)} hours'
+    stats = {}
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    try:
+        # children first
+        cur.execute("DELETE FROM glm_events WHERE created_at < datetime('now', ?)", (cutoff_clause,))
+        stats['glm_events_deleted'] = cur.rowcount
+
+        cur.execute("DELETE FROM glm_groups WHERE created_at < datetime('now', ?)", (cutoff_clause,))
+        stats['glm_groups_deleted'] = cur.rowcount
+
+        cur.execute("DELETE FROM glm_flashes WHERE created_at < datetime('now', ?)", (cutoff_clause,))
+        stats['glm_flashes_deleted'] = cur.rowcount
+
+        cur.execute("DELETE FROM processing_log WHERE processing_time < datetime('now', ?)", (cutoff_clause,))
+        stats['processing_log_deleted'] = cur.rowcount
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    if vacuum:
+        try:
+            conn2 = sqlite3.connect(DB_PATH)
+            conn2.execute('VACUUM')
+            conn2.execute('PRAGMA optimize')
+            conn2.close()
+            stats['vacuumed'] = True
+        except Exception:
+            stats['vacuumed'] = False
+
+    logger.info(
+        'Purged data older than %s: %s',
+        cutoff_clause, ', '.join(f'{k}={v}' for k, v in stats.items())
+    )
+    return stats
+
+
+
 class GLMProcessor:
     """Process GLM data from AWS S3 to SQLite database."""
 
@@ -510,7 +566,6 @@ class GLMProcessor:
                 success_count += 1
         logger.info(f'Completed processing: {success_count}/{len(files)} files successful')
 
-
 def main():
     """Example usage of GLMProcessor."""
 
@@ -532,7 +587,10 @@ def main():
     for table, count in summary.items():
         print(f"  {table}: {count:,} records")
 
+    # Purge old data
+    purge_old_data(max_age_hours=6)
 
 if __name__ == "__main__":
-    print(DB_PATH)
-    main()
+    while True:
+        main()
+        time.sleep(INGEST_REFRESH_SECONDS)
