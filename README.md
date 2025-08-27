@@ -1,5 +1,20 @@
-# GLM-Lightning-Monitor
-Python scrips for generating a webpage for monitoring lightning flashes using data from the GOES Lightning Mapper (GLM)
+# GLM Lightning Monitor
 
-![alt text](https://raw.githubusercontent.com/HumphreysCarter/GLM-Lightning-Monitor/master/glm_monitor.PNG)
+![Monitor webpage example](docs/monitor_example.png)
 
+## Installation
+
+### Requirements
+ * [Docker](https://docs.docker.com/engine/install/)
+
+### Build the Container 
+
+```shell
+$ git clone https://github.com/HumphreysCarter/GLM-Lightning-Monitor.git
+$ cd GLM-Lightning-Monitor
+$ docker compose up --build
+```
+
+## Usage
+
+Once running, the application will be available at [localhost:8080](http://localhost:8080/).
