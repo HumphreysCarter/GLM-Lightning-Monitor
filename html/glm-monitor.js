@@ -107,8 +107,8 @@ function colorForAge(ageMin, windowMinutes) {
 // Age → size (newer ⇒ bigger)
 function sizeForAge(ageMin, windowMinutes) {
     const t = Math.max(0, Math.min(1, ageMin / Math.max(1, windowMinutes))); // 0=new, 1=old
-    const minR = 2;  // oldest
-    const maxR = 8;  // newest
+    const minR = 3;  // oldest
+    const maxR = 6;  // newest
     return maxR - (maxR - minR) * t;
 }
 
