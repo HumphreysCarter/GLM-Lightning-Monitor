@@ -161,7 +161,7 @@ async function fetchAndRender() {
     const params = new URLSearchParams({minutes: String(minutes), limit: String(limit)});
     const bbox = getBboxParam();
     if (bbox) params.set('bbox', bbox);
-    const url = `${API_BASE}/flashes?${params.toString()}`;
+    const url = `/api/flashes?${params.toString()}`;
 
     // reset schedule if auto is on (so countdown restarts right after a fetch)
     if (autoEl.checked) {

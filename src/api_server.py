@@ -6,7 +6,7 @@ from typing import Optional, Tuple, List, Dict, Any
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from settings import DB_PATH
+from .settings import DB_PATH
 
 _MILES_PER_DEG_LAT = 69.0    # ~ miles per degree latitude
 _MILES_PER_DEG_LON_EQ = 69.172  # ~ miles per deg longitude at equator

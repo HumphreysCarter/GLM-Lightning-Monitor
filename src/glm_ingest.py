@@ -10,7 +10,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
-from settings import DB_PATH, INGEST_REFRESH_SECONDS
+from .settings import DB_PATH, INGEST_REFRESH_SECONDS
 
 
 # Configure logging
