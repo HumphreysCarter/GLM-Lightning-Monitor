@@ -17,4 +17,4 @@ $ docker compose up --build
 
 ## Usage
 
-Once running, the application will be available at [localhost:8080](http://localhost:8080/).
+Once running, the application will be available at [localhost:8080](http://localhost:8080/). API documentation is available at [localhost:8080/api/docs](http://localhost:8080/api/docs).
