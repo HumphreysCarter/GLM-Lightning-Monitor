@@ -1,39 +1,56 @@
-<html>
-  <head>
-  	<title>GLM Lightning Monitor</title>
-  	<meta charset="UTF-8">
-  	<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  	<meta http-equiv="Pragma" content="no-cache">
-  	<meta http-equiv="Expires" content="0">
-  	<link rel="stylesheet" type="text/css" href="/css/test.css">
-  	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A==" crossorigin=""/>
-  	<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js" integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA==" crossorigin=""></script>
-  	<script src="../javascript/leaflet.ajax.min.js"></script>
-  </head>
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <title>GLM Lightning Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
 
-  <body>
-    <h5 id="page_header">&nbsp;GLM Lightning Monitor</h5>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 
-    MRMS Dataset Overlay:&nbsp;
-    <select id="model" name="Model" required="required" onchange="updateOptions()">
-        <option value="NLDN_CG_001min_AvgDensity">CG Average Lightning Density 1-min - NLDN</option>
-        <option value="NLDN_CG_005min_AvgDensity">CG Average Lightning Density 5-min - NLDN</option>
-        <option value="NLDN_CG_015min_AvgDensity">CG Average Lightning Density 15-min - NLDN</option>
-        <option value="NLDN_CG_030min_AvgDensity"> 	CG Average Lightning Density 30-min - NLDN</option>
-        <option value="LightningProbabilityNext30minGrid">Lightning Probability 0-30 minutes - NLDN</option>
-        <option value="LightningProbabilityNext60minGrid"> Lightning Probability 0-30 minutes - NLDN</option>
-        <option value="LightningJumpGrid">Rapid lightning increases and decreases</option>
-        <option value="LightningJumpGrid_Max_005min">Rapid lightning increases and decreases over 5-minutes</option>
-        <option value="ReflectivityAtLowestAltitude">Reflectivity At Lowest Altitude</option>
-        <option value="MergedReflectivityQCComposite">Composite Reflectivity Mosaic</option>
-    </select> &nbsp;
+    <!-- GLM Monitor CSS -->
+    <link rel="stylesheet" href="glm-monitor.css"/>
+</head>
+<body>
+<div id="map"></div>
 
-    <button onclick="updateImagePath()">Update Plot</button>&nbsp;
+<div class="panel">
+    <h1>GLM Lightning Monitor</h1>
+    <div class="row">
+        <label for="minutes">Show Last:</label>
+        <input id="minutes" type="number" min="1" max="1440" value="30"/>
+        <label>minutes</label>
+    </div>
+    <div class="row">
+        <label for="auto"><input id="auto" type="checkbox" checked/> Auto-refresh</label>
+        <label for="interval">every</label>
+        <input id="interval" type="number" min="2" max="300" value="60"/>
+        <label>sec</label>
+        <button id="refresh" class="primary">Refresh Now</button>
+    </div>
+    <div class="buttons">
 
-    </br></br>
+    </div>
+    <div id="status" class="status">Idle.</div>
+</div>
 
-    <div id="map" style="width: 1100px; height: 700px;"></div>
-    <script type="text/javascript" src="../javascript/glm-monitor.js"></script>
+<div class="legend">
+    <div><strong>Flash Age</strong></div>
+    <div class="scale" title="Newest (red) → Oldest (blue)"></div>
+    <div class="legend-row">
+        <span>Newest</span>
+        <span>Oldest</span>
+    </div>
+</div>
 
-  </body>
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- GLM Monitor JS -->
+<script src="glm-monitor.js"></script>
+
+
+</body>
 </html>
