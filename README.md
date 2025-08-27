@@ -9,9 +9,17 @@
 
 ### Build the Container 
 
+### Initial Install
 ```shell
 $ git clone https://github.com/HumphreysCarter/GLM-Lightning-Monitor.git
 $ cd GLM-Lightning-Monitor
+$ docker compose up --build
+```
+
+### Updates
+```shell
+$ cd GLM-Lightning-Monitor
+$ git pull
 $ docker compose up --build
 ```
 
