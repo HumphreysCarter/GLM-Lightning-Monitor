@@ -29,6 +29,16 @@
         <label>sec</label>
         <button id="refresh" class="primary">Refresh Now</button>
     </div>
+    <div class="row">
+      <label for="rings"><input id="rings" type="checkbox" /> Show range rings</label>
+      <label for="ringsMax">Max mi:</label>
+      <input id="ringsMax" type="number" min="10" max="500" step="10" value="100" />
+      <button id="ringsCenter" type="button" title="Pin rings to current map center">Center here</button>
+    </div>
+    <div class="row">
+      <span id="ringsStatus" class="status"></span>
+    </div>
+
     <div class="buttons">
 
     </div>

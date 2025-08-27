@@ -11,7 +11,7 @@ from .settings import DB_PATH
 _MILES_PER_DEG_LAT = 69.0    # ~ miles per degree latitude
 _MILES_PER_DEG_LON_EQ = 69.172  # ~ miles per deg longitude at equator
 
-app = FastAPI(title='GLM Flash Data API', version='1.0.0')
+app = FastAPI(title='GLM Flash Data API', version='1.0.0', root_path='/api/')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
