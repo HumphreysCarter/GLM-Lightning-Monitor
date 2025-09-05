@@ -1,5 +1,6 @@
 // ====== Config ======
-const DEFAULT_AUTO_SEC = 60;              // auto-refresh cadence
+const API_BASE = '';
+const DEFAULT_AUTO_SEC = 60;
 
 // ====== DOM helpers ======
 const $ = (id) => document.getElementById(id);
@@ -10,13 +11,39 @@ const autoEl = $('auto');
 const intervalEl = $('interval');
 const statusEl = $('status');
 const refreshBtn = $('refresh');
+const basemapSelect = $('basemap-select');
+
+// ====== Basemap configuration ======
+const BASEMAPS = {
+    "CARTO Dark": {
+        "url": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        "maxZoom": 18,
+        "attribution": "&copy; <a href='https://carto.com/attributions'>CARTO</a>",
+        "default": true
+    },
+    "OpenStreetMap": {
+        "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "attribution": "© OpenStreetMap contributors"
+    },
+    "Google Satellite": {
+        "url": "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+        "attribution": "© Google"
+    },
+    "Google Terrain": {
+        "url": "https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
+        "attribution": "© Google"
+    }
+};
 
 // ====== Leaflet map ======
 const map = L.map('map', {worldCopyJump: true, minZoom: 8}).setView([ 5.22, -97.43], 8);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 14,
-    attribution: '&copy; OpenStreetMap contributors'
+
+// Initialize with default basemap (CARTO Dark)
+let currentTileLayer = L.tileLayer(BASEMAPS["CARTO Dark"].url, {
+    maxZoom: BASEMAPS["CARTO Dark"].maxZoom || 18,
+    attribution: BASEMAPS["CARTO Dark"].attribution
 }).addTo(map);
+
 const layer = L.layerGroup().addTo(map);
 let lastGeoJsonLayer = null;
 
@@ -35,11 +62,13 @@ let lastWindowMinutes = Number(minutesEl?.value || 30);
 let lastStatusBase = 'Idle.';  // base message we append countdown to
 
 // --- Persist / restore map view ---
-const STORAGE_KEYS = {view: 'glm:view'};
-STORAGE_KEYS.view       = STORAGE_KEYS.view || 'glm:view';
-STORAGE_KEYS.ringsOn    = 'glm:rings:on';
-STORAGE_KEYS.ringsMax   = 'glm:rings:max';
-STORAGE_KEYS.ringsCenter= 'glm:rings:center';
+const STORAGE_KEYS = {
+    view: 'glm:view',
+    ringsOn: 'glm:rings:on',
+    ringsMax: 'glm:rings:max',
+    ringsCenter: 'glm:rings:center',
+    basemap: 'glm:basemap'
+};
 
 // --- Range rings ---
 const ringsEl        = $('rings');
@@ -69,6 +98,40 @@ function updateColorLegend() {
     }
 
     scaleEl.style.background = `linear-gradient(90deg, ${steps.join(', ')})`;
+}
+
+// ====== Basemap switching ======
+function switchBasemap(name) {
+    const config = BASEMAPS[name];
+    if (!config) return;
+
+    // Remove current tile layer
+    if (currentTileLayer) {
+        map.removeLayer(currentTileLayer);
+    }
+
+    // Add new tile layer
+    currentTileLayer = L.tileLayer(config.url, {
+        maxZoom: config.maxZoom || 18,
+        attribution: config.attribution
+    }).addTo(map);
+
+    // Save preference
+    try {
+        localStorage.setItem(STORAGE_KEYS.basemap, name);
+    } catch {}
+}
+
+function restoreBasemap() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEYS.basemap);
+        if (saved && BASEMAPS[saved]) {
+            basemapSelect.value = saved;
+            if (saved !== "CARTO Dark") {
+                switchBasemap(saved);
+            }
+        }
+    } catch {}
 }
 
 function saveRingsState() {
@@ -247,7 +310,7 @@ async function fetchAndRender() {
     const params = new URLSearchParams({minutes: String(minutes), limit: String(limit)});
     const bbox = getBboxParam();
     if (bbox) params.set('bbox', bbox);
-    const url = `/api/flashes?${params.toString()}`;
+    const url = `${API_BASE}/api/flashes?${params.toString()}`;
 
     // reset schedule if auto is on (so countdown restarts right after a fetch)
     if (autoEl.checked) {
@@ -367,6 +430,10 @@ ringsCenterBtn.addEventListener('click', () => {
   drawRings();
 });
 
+basemapSelect.addEventListener('change', () => {
+    switchBasemap(basemapSelect.value);
+});
+
 // ====== Initial boot ======
 intervalEl.value = DEFAULT_AUTO_SEC;
 autoEl.checked = true;
@@ -374,6 +441,7 @@ autoEl.checked = true;
 // restore view from previous session (if any) BEFORE first fetch
 restoreMapView();
 restoreRingsState(); // pull from localStorage if present
+restoreBasemap();    // restore saved basemap preference
 drawRings();         // draw initial rings state
 updateColorLegend(); // set up the proper color legend
 

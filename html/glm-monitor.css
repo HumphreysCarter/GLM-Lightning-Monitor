@@ -1,4 +1,4 @@
-:root {
+    :root {
         --panel-bg: #ffffff;
         --panel-border: #e5e7eb;
         --accent: #2563eb;
@@ -94,6 +94,28 @@
 
     .status .err {
         color: var(--err);
+    }
+
+    .basemap-toggle {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1000;
+        background: var(--panel-bg);
+        border: 1px solid var(--panel-border);
+        border-radius: 8px;
+        padding: 8px 10px;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+        font: 12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    .basemap-toggle select {
+        border: 1px solid var(--panel-border);
+        background: #f8fafc;
+        padding: 4px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
     }
 
     .legend {
