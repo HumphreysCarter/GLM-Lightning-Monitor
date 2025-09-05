@@ -1,5 +1,5 @@
 // ====== Config ======
-const API_BASE = 'http://localhost:8000'; // change if API is elsewhere
+const API_BASE = ''; // change if API is elsewhere
 const DEFAULT_AUTO_SEC = 60;              // auto-refresh cadence
 
 // ====== DOM helpers ======
@@ -11,13 +11,44 @@ const autoEl = $('auto');
 const intervalEl = $('interval');
 const statusEl = $('status');
 const refreshBtn = $('refresh');
+const basemapSelect = $('basemap-select');
+const timeLoopEl = $('timeLoop');
+const loopIntervalEl = $('loopInterval');
+const loopPlayBtn = $('loopPlay');
+const loopStepBtn = $('loopStep');
+const loopStatusEl = $('loopStatus');
+
+// ====== Basemap configuration ======
+const BASEMAPS = {
+    "CARTO Dark": {
+        "url": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        "maxZoom": 18,
+        "attribution": "&copy; <a href='https://carto.com/attributions'>CARTO</a>",
+        "default": true
+    },
+    "OpenStreetMap": {
+        "url": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "attribution": "© OpenStreetMap contributors"
+    },
+    "Google Satellite": {
+        "url": "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}",
+        "attribution": "© Google"
+    },
+    "Google Terrain": {
+        "url": "https://mt1.google.com/vt/lyrs=p&x={x}&y={y}&z={z}",
+        "attribution": "© Google"
+    }
+};
 
 // ====== Leaflet map ======
-const map = L.map('map', {worldCopyJump: true, minZoom: 8}).setView([ 5.22, -97.43], 8);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 14,
-    attribution: '&copy; OpenStreetMap contributors'
+const map = L.map('map', {worldCopyJump: true, minZoom: 8}).setView([5.22, -97.43], 8);
+
+// Initialize with default basemap (CARTO Dark)
+let currentTileLayer = L.tileLayer(BASEMAPS["CARTO Dark"].url, {
+    maxZoom: BASEMAPS["CARTO Dark"].maxZoom || 18,
+    attribution: BASEMAPS["CARTO Dark"].attribution
 }).addTo(map);
+
 const layer = L.layerGroup().addTo(map);
 let lastGeoJsonLayer = null;
 
@@ -32,21 +63,29 @@ let currentIntervalSec = DEFAULT_AUTO_SEC;
 let lastNowTs = Date.now();
 let lastWindowMinutes = Number(minutesEl?.value || 30);
 
+// ====== Time loop state ======
+let loopTimer = null;
+let loopCurrentTime = null; // Unix timestamp for current loop position
+let loopIsPlaying = false;
+
 // ====== Status helpers (with countdown) ======
 let lastStatusBase = 'Idle.';  // base message we append countdown to
 
 // --- Persist / restore map view ---
-const STORAGE_KEYS = {view: 'glm:view'};
-STORAGE_KEYS.view       = STORAGE_KEYS.view || 'glm:view';
-STORAGE_KEYS.ringsOn    = 'glm:rings:on';
-STORAGE_KEYS.ringsMax   = 'glm:rings:max';
-STORAGE_KEYS.ringsCenter= 'glm:rings:center';
+const STORAGE_KEYS = {
+    view: 'glm:view',
+    ringsOn: 'glm:rings:on',
+    ringsMax: 'glm:rings:max',
+    ringsCenter: 'glm:rings:center',
+    basemap: 'glm:basemap',
+    loopInterval: 'glm:loop:interval'
+};
 
 // --- Range rings ---
-const ringsEl        = $('rings');
-const ringsMaxEl     = $('ringsMax');
+const ringsEl = $('rings');
+const ringsMaxEl = $('ringsMax');
 const ringsCenterBtn = $('ringsCenter');
-const ringsStatusEl  = $('ringsStatus');
+const ringsStatusEl = $('ringsStatus');
 
 const MI_TO_M = 1609.344;
 const RING_STEP_MI = 10;
@@ -55,34 +94,245 @@ const ringsLayer = L.layerGroup().addTo(map);
 // If null → rings follow map center; if set → pinned center {lat, lng}
 let ringCenter = null;
 
+// ====== Color legend generation ======
+function updateColorLegend() {
+    const scaleEl = $('colorScale');
+    if (!scaleEl) return;
 
+    // Generate the same gradient that matches the HSL colors in colorForAge
+    // HSL goes from hue 0 (red) to hue 220 (blue)
+    const steps = [];
+    for (let i = 0; i <= 20; i++) {
+        const t = i / 20;
+        const hue = 0 + (220 * t);
+        steps.push(`hsl(${hue}, 100%, 50%) ${(t * 100).toFixed(1)}%`);
+    }
+
+    scaleEl.style.background = `linear-gradient(90deg, ${steps.join(', ')})`;
+}
+
+// ====== Basemap switching ======
+function switchBasemap(name) {
+    const config = BASEMAPS[name];
+    if (!config) return;
+
+    // Remove current tile layer
+    if (currentTileLayer) {
+        map.removeLayer(currentTileLayer);
+    }
+
+    // Add new tile layer
+    currentTileLayer = L.tileLayer(config.url, {
+        maxZoom: config.maxZoom || 18,
+        attribution: config.attribution
+    }).addTo(map);
+
+    // Save preference
+    try {
+        localStorage.setItem(STORAGE_KEYS.basemap, name);
+    } catch {
+    }
+}
+
+function restoreBasemap() {
+    try {
+        const saved = localStorage.getItem(STORAGE_KEYS.basemap);
+        if (saved && BASEMAPS[saved]) {
+            basemapSelect.value = saved;
+            if (saved !== "CARTO Dark") {
+                switchBasemap(saved);
+            }
+        }
+    } catch {
+    }
+}
+
+// ====== Time loop functions ======
+function startTimeLoop() {
+    if (loopTimer) clearInterval(loopTimer);
+
+    const now = Date.now();
+    const windowMinutes = Number(minutesEl.value || 30);
+
+    // Start from 60 minutes ago
+    loopCurrentTime = now - (60 * 60 * 1000);
+    loopIsPlaying = true;
+    loopPlayBtn.textContent = 'Pause';
+
+    // Disable auto-refresh while looping
+    if (autoEl.checked) {
+        autoEl.checked = false;
+        stopAuto();
+    }
+
+    // Initial fetch
+    fetchLoopData();
+
+    // Set up timer for stepping through time
+    loopTimer = setInterval(() => {
+        const stepMinutes = Number(loopIntervalEl.value || 5);
+        loopCurrentTime += stepMinutes * 60 * 1000;
+
+        // Stop when we reach current time
+        if (loopCurrentTime >= now) {
+            stopTimeLoop();
+            return;
+        }
+
+        fetchLoopData();
+    }, 1000); // 1 second between steps
+}
+
+function stopTimeLoop() {
+    if (loopTimer) {
+        clearInterval(loopTimer);
+        loopTimer = null;
+    }
+    loopIsPlaying = false;
+    loopCurrentTime = null;
+    loopPlayBtn.textContent = 'Play';
+    loopStatusEl.textContent = '';
+
+    // Re-enable normal fetching
+    fetchAndRender();
+}
+
+function stepTimeLoop() {
+    const now = Date.now();
+    const stepMinutes = Number(loopIntervalEl.value || 5);
+
+    if (!loopCurrentTime) {
+        loopCurrentTime = now - (60 * 60 * 1000); // Start 60 min ago
+    } else {
+        loopCurrentTime += stepMinutes * 60 * 1000;
+        if (loopCurrentTime >= now) {
+            loopCurrentTime = now;
+        }
+    }
+
+    // Disable auto-refresh while stepping
+    if (autoEl.checked) {
+        autoEl.checked = false;
+        stopAuto();
+    }
+
+    fetchLoopData();
+}
+
+async function fetchLoopData() {
+    if (!loopCurrentTime) return;
+
+    // cancel any inflight fetch
+    if (inflight) inflight.abort();
+    const ctl = new AbortController();
+    inflight = ctl;
+
+    const windowMinutes = Number(minutesEl.value || 30);
+    const limit = 20000;
+
+    // Calculate time range for this loop position
+    const endTime = new Date(loopCurrentTime).toISOString();
+    const startTime = new Date(loopCurrentTime - windowMinutes * 60 * 1000).toISOString();
+
+    const params = new URLSearchParams({
+        start_time: startTime,
+        end_time: endTime,
+        limit: String(limit)
+    });
+
+    const bbox = getBboxParam();
+    if (bbox) params.set('bbox', bbox);
+    const url = `${API_BASE}/api/flashes?${params.toString()}`;
+
+    // Update status to show current loop time
+    const timeStr = new Date(loopCurrentTime).toLocaleTimeString();
+    const ageMinutesAgo = Math.round((Date.now() - loopCurrentTime) / 60000);
+    loopStatusEl.textContent = `Showing: ${timeStr} (${ageMinutesAgo} min ago)`;
+    setBaseStatus('Loading loop data…');
+
+    try {
+        const t0 = performance.now();
+        const res = await fetch(url, {signal: ctl.signal});
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const geojson = await res.json();
+
+        // Use loop time as reference for age calculations
+        lastNowTs = loopCurrentTime;
+        lastWindowMinutes = windowMinutes;
+
+        // Build a fresh set of keys for this render
+        const newKeys = new Set();
+
+        // Draw
+        layer.clearLayers();
+        if (lastGeoJsonLayer) lastGeoJsonLayer.remove();
+
+        lastGeoJsonLayer = L.geoJSON(geojson, {
+            pointToLayer: (feat, latlng) => {
+                const key = featureKey(feat);
+                const opts = {...styleForFeature(feat), className: 'glm-flash'};
+                return L.circleMarker(latlng, opts);
+            },
+            onEachFeature: (feat, l) => {
+                newKeys.add(featureKey(feat));
+                l.bindPopup(popupHtml(feat.properties));
+            }
+        }).addTo(layer);
+
+        const n = geojson.features?.length ?? 0;
+        const dt = (performance.now() - t0).toFixed(0);
+        setBaseStatus(`Rendered ${n.toLocaleString()} flashes in ${dt} ms.`, 'ok');
+    } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error(err);
+        setBaseStatus(`Error: ${err.message}`, 'err');
+    } finally {
+        inflight = null;
+    }
+}
+
+function saveLoopSettings() {
+    try {
+        localStorage.setItem(STORAGE_KEYS.loopInterval, String(loopIntervalEl.value || 5));
+    } catch {
+    }
+}
+
+function restoreLoopSettings() {
+    try {
+        const interval = localStorage.getItem(STORAGE_KEYS.loopInterval);
+        if (interval !== null) loopIntervalEl.value = interval;
+    } catch {
+    }
+}
 
 function saveRingsState() {
-  try {
-    localStorage.setItem(STORAGE_KEYS.ringsOn, ringsEl.checked ? '1' : '0');
-    localStorage.setItem(STORAGE_KEYS.ringsMax, String(ringsMaxEl.value || '100'));
-    if (ringCenter) {
-      localStorage.setItem(STORAGE_KEYS.ringsCenter, JSON.stringify(ringCenter));
-    } else {
-      localStorage.removeItem(STORAGE_KEYS.ringsCenter);
+    try {
+        localStorage.setItem(STORAGE_KEYS.ringsOn, ringsEl.checked ? '1' : '0');
+        localStorage.setItem(STORAGE_KEYS.ringsMax, String(ringsMaxEl.value || '100'));
+        if (ringCenter) {
+            localStorage.setItem(STORAGE_KEYS.ringsCenter, JSON.stringify(ringCenter));
+        } else {
+            localStorage.removeItem(STORAGE_KEYS.ringsCenter);
+        }
+    } catch {
     }
-  } catch {}
 }
 
 function restoreRingsState() {
-  try {
-    const on  = localStorage.getItem(STORAGE_KEYS.ringsOn);
-    const mx  = localStorage.getItem(STORAGE_KEYS.ringsMax);
-    const cen = localStorage.getItem(STORAGE_KEYS.ringsCenter);
-    if (on !== null) ringsEl.checked = on === '1';
-    if (mx !== null) ringsMaxEl.value = mx;
-    if (cen) {
-      const v = JSON.parse(cen);
-      if (Number.isFinite(v?.lat) && Number.isFinite(v?.lng)) ringCenter = { lat: v.lat, lng: v.lng };
+    try {
+        const on = localStorage.getItem(STORAGE_KEYS.ringsOn);
+        const mx = localStorage.getItem(STORAGE_KEYS.ringsMax);
+        const cen = localStorage.getItem(STORAGE_KEYS.ringsCenter);
+        if (on !== null) ringsEl.checked = on === '1';
+        if (mx !== null) ringsMaxEl.value = mx;
+        if (cen) {
+            const v = JSON.parse(cen);
+            if (Number.isFinite(v?.lat) && Number.isFinite(v?.lng)) ringCenter = {lat: v.lat, lng: v.lng};
+        }
+    } catch {
     }
-  } catch {}
 }
-
 
 function saveMapView() {
     try {
@@ -196,35 +446,40 @@ function popupHtml(p) {
 }
 
 function drawRings() {
-  ringsLayer.clearLayers();
-  if (!ringsEl.checked) { ringsStatusEl.textContent = ''; return; }
+    ringsLayer.clearLayers();
+    if (!ringsEl.checked) {
+        ringsStatusEl.textContent = '';
+        return;
+    }
 
-  const maxMi = Math.max(RING_STEP_MI, Math.min(500, Number(ringsMaxEl.value || 100)));
-  const c = ringCenter || map.getCenter();
+    const maxMi = Math.max(RING_STEP_MI, Math.min(500, Number(ringsMaxEl.value || 100)));
+    const c = ringCenter || map.getCenter();
 
-  // Concentric rings every 10 miles
-  for (let mi = RING_STEP_MI; mi <= maxMi; mi += RING_STEP_MI) {
-    L.circle([c.lat, c.lng], {
-      radius: mi * MI_TO_M,
-      color: '#0ea5e9',
-      weight: 1,
-      fill: false,
-      dashArray: '4,4',
-      interactive: false
+    // Concentric rings every 10 miles
+    for (let mi = RING_STEP_MI; mi <= maxMi; mi += RING_STEP_MI) {
+        L.circle([c.lat, c.lng], {
+            radius: mi * MI_TO_M,
+            color: '#0ea5e9',
+            weight: 1,
+            fill: false,
+            dashArray: '4,4',
+            interactive: false
+        }).addTo(ringsLayer);
+    }
+
+    // Center marker
+    L.circleMarker([c.lat, c.lng], {
+        radius: 4, weight: 2, color: '#0ea5e9', fillColor: '#fff', fillOpacity: 1, interactive: false
     }).addTo(ringsLayer);
-  }
 
-  // Center marker
-  L.circleMarker([c.lat, c.lng], {
-    radius: 4, weight: 2, color: '#0ea5e9', fillColor: '#fff', fillOpacity: 1, interactive: false
-  }).addTo(ringsLayer);
-
-  ringsStatusEl.textContent = `Center ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)} · ${maxMi} mi`;
+    ringsStatusEl.textContent = `Center ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)} · ${maxMi} mi`;
 }
-
 
 // ====== Fetch & render ======
 async function fetchAndRender() {
+    // If we're in time loop mode, don't interfere
+    if (timeLoopEl.checked && (loopIsPlaying || loopCurrentTime)) return;
+
     // cancel any inflight fetch
     if (inflight) inflight.abort();
     const ctl = new AbortController();
@@ -235,7 +490,7 @@ async function fetchAndRender() {
     const params = new URLSearchParams({minutes: String(minutes), limit: String(limit)});
     const bbox = getBboxParam();
     if (bbox) params.set('bbox', bbox);
-    const url = `/api/flashes?${params.toString()}`;
+    const url = `${API_BASE}/api/flashes?${params.toString()}`;
 
     // reset schedule if auto is on (so countdown restarts right after a fetch)
     if (autoEl.checked) {
@@ -257,7 +512,7 @@ async function fetchAndRender() {
         // Build a fresh set of keys for this render
         const newKeys = new Set();
 
-// Draw
+        // Draw
         layer.clearLayers();
         if (lastGeoJsonLayer) lastGeoJsonLayer.remove();
 
@@ -339,22 +594,65 @@ map.on('moveend', () => {
     saveMapView();
 
     if (!ringCenter) {    // follow map center unless pinned
-    drawRings();
-  }
+        drawRings();
+    }
 
     // refetch
     if (moveDebounce) clearTimeout(moveDebounce);
     moveDebounce = setTimeout(fetchAndRender, 250);
 });
 
-ringsEl.addEventListener('change', () => { saveRingsState(); drawRings(); });
-ringsMaxEl.addEventListener('change', () => { saveRingsState(); drawRings(); });
+ringsEl.addEventListener('change', () => {
+    saveRingsState();
+    drawRings();
+});
+ringsMaxEl.addEventListener('change', () => {
+    saveRingsState();
+    drawRings();
+});
 ringsCenterBtn.addEventListener('click', () => {
-  ringCenter = map.getCenter();  // pin to current view center
-  saveRingsState();
-  drawRings();
+    ringCenter = map.getCenter();  // pin to current view center
+    saveRingsState();
+    drawRings();
 });
 
+basemapSelect.addEventListener('change', () => {
+    switchBasemap(basemapSelect.value);
+});
+
+// ====== Time loop event listeners ======
+timeLoopEl.addEventListener('change', () => {
+    if (!timeLoopEl.checked && loopIsPlaying) {
+        stopTimeLoop();
+    }
+    saveLoopSettings();
+});
+
+loopIntervalEl.addEventListener('change', saveLoopSettings);
+
+loopPlayBtn.addEventListener('click', () => {
+    if (!timeLoopEl.checked) {
+        timeLoopEl.checked = true;
+    }
+
+    if (loopIsPlaying) {
+        stopTimeLoop();
+    } else {
+        startTimeLoop();
+    }
+});
+
+loopStepBtn.addEventListener('click', () => {
+    if (!timeLoopEl.checked) {
+        timeLoopEl.checked = true;
+    }
+
+    if (loopIsPlaying) {
+        stopTimeLoop();
+    }
+
+    stepTimeLoop();
+});
 
 // ====== Initial boot ======
 intervalEl.value = DEFAULT_AUTO_SEC;
@@ -363,8 +661,10 @@ autoEl.checked = true;
 // restore view from previous session (if any) BEFORE first fetch
 restoreMapView();
 restoreRingsState(); // pull from localStorage if present
+restoreBasemap();    // restore saved basemap preference
+restoreLoopSettings(); // restore loop interval setting
 drawRings();         // draw initial rings state
+updateColorLegend(); // set up the proper color legend
 
 fetchAndRender();
 startAuto();
-

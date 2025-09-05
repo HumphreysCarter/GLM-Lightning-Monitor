@@ -96,6 +96,28 @@ button:disabled {
     color: var(--err);
 }
 
+.basemap-toggle {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.1);
+    font: 12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+}
+
+.basemap-toggle select {
+    border: 1px solid var(--panel-border);
+    background: #f8fafc;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
 .legend {
     position: absolute;
     right: 10px;
@@ -112,7 +134,6 @@ button:disabled {
 
 .scale {
     height: 10px;
-    background: linear-gradient(90deg, red 0%, #3388ff 100%);
     border-radius: 4px;
     margin: 6px 0 4px;
 }
@@ -125,13 +146,26 @@ button:disabled {
 
 /* Blink new markers for ~2s when they first appear */
 @keyframes glmFlash {
-  0%   { opacity: .25; }
-  20%  { opacity: 1;   }
-  40%  { opacity: .35; }
-  60%  { opacity: 1;   }
-  80%  { opacity: .35; }
-  100% { opacity: 1;   }
+    0% {
+        opacity: .25;
+    }
+    20% {
+        opacity: 1;
+    }
+    40% {
+        opacity: .35;
+    }
+    60% {
+        opacity: 1;
+    }
+    80% {
+        opacity: .35;
+    }
+    100% {
+        opacity: 1;
+    }
 }
+
 .leaflet-interactive.glm-new {
-  animation: glmFlash 2s ease-out 1;
+    animation: glmFlash 2s ease-out 1;
 }

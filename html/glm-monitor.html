@@ -15,6 +15,16 @@
 <body>
 <div id="map"></div>
 
+<div class="basemap-toggle">
+    <label for="basemap-select">Background:</label>
+    <select id="basemap-select">
+        <option value="CARTO Dark">CARTO Dark</option>
+        <option value="OpenStreetMap">OpenStreetMap</option>
+        <option value="Google Satellite">Google Satellite</option>
+        <option value="Google Terrain">Google Terrain</option>
+    </select>
+</div>
+
 <div class="panel">
     <h1>GLM Lightning Monitor</h1>
     <div class="row">
@@ -30,13 +40,25 @@
         <button id="refresh" class="primary">Refresh Now</button>
     </div>
     <div class="row">
-      <label for="rings"><input id="rings" type="checkbox" /> Show range rings</label>
-      <label for="ringsMax">Max mi:</label>
-      <input id="ringsMax" type="number" min="10" max="500" step="10" value="100" />
-      <button id="ringsCenter" type="button" title="Pin rings to current map center">Center here</button>
+        <label for="rings"><input id="rings" type="checkbox"/> Show range rings</label>
+        <label for="ringsMax">Max mi:</label>
+        <input id="ringsMax" type="number" min="10" max="500" step="10" value="100"/>
+        <button id="ringsCenter" type="button" title="Pin rings to current map center">Center here</button>
     </div>
     <div class="row">
-      <span id="ringsStatus" class="status"></span>
+        <span id="ringsStatus" class="status"></span>
+    </div>
+
+    <div class="row">
+        <label for="timeLoop"><input id="timeLoop" type="checkbox"/> Time loop</label>
+        <label for="loopInterval">Step:</label>
+        <input id="loopInterval" type="number" min="1" max="10" value="5"/>
+        <label>min</label>
+        <button id="loopPlay" type="button">Play</button>
+        <button id="loopStep" type="button">Step</button>
+    </div>
+    <div class="row">
+        <span id="loopStatus" class="status"></span>
     </div>
 
     <div class="buttons">
@@ -47,7 +69,7 @@
 
 <div class="legend">
     <div><strong>Flash Age</strong></div>
-    <div class="scale" title="Newest (red) → Oldest (blue)"></div>
+    <div class="scale" id="colorScale" title="Newest (red) → Oldest (blue)"></div>
     <div class="legend-row">
         <span>Newest</span>
         <span>Oldest</span>
