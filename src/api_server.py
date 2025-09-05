@@ -175,17 +175,52 @@ def health():
 
 @app.get('/flashes')
 def get_flashes(
-        minutes: int = Query(30, ge=1, le=24 * 60),
+        minutes: Optional[int] = Query(None, ge=1, le=24 * 60,
+                                       description='Minutes back from now (alternative to start_time/end_time)'),
+        start_time: Optional[str] = Query(None, description='Start time in ISO format (e.g., 2024-01-01T12:00:00Z)'),
+        end_time: Optional[str] = Query(None, description='End time in ISO format (e.g., 2024-01-01T13:00:00Z)'),
         bbox: Optional[str] = Query(None, description='minLon,minLat,maxLon,maxLat'),
         limit: int = Query(10000, ge=1, le=200000),
         use_cache: bool = Query(True, description='Use cached data if available'),
 ):
     '''
-    Return GLM flashes from the last `minutes` minutes as GeoJSON FeatureCollection.
+    Return GLM flashes as GeoJSON FeatureCollection.
+    Time filtering options:
+    1. Use `minutes` for last N minutes from now
+    2. Use `start_time` and `end_time` for specific time range
+    If both are provided, start_time/end_time takes precedence.
     Optional bbox filter: minLon,minLat,maxLon,maxLat
     '''
-    # Generate cache key
-    cache_key = _get_cache_key('flashes', minutes=minutes, bbox=bbox, limit=limit)
+
+    # Validate time parameters
+    if start_time is not None and end_time is not None:
+        try:
+            start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            if start_dt >= end_dt:
+                raise HTTPException(status_code=400, detail='start_time must be before end_time')
+            time_mode = 'range'
+            window_start = start_dt
+            window_end = end_dt
+        except ValueError as e:
+            raise HTTPException(status_code=400,
+                                detail=f'Invalid time format. Use ISO format like 2024-01-01T12:00:00Z. Error: {str(e)}')
+    elif start_time is not None or end_time is not None:
+        raise HTTPException(status_code=400,
+                            detail='Both start_time and end_time must be provided when using time range')
+    elif minutes is not None:
+        time_mode = 'minutes'
+        now_utc = datetime.now(timezone.utc)
+        window_start = now_utc - timedelta(minutes=minutes)
+        window_end = now_utc + timedelta(minutes=5)  # Small buffer for clock drift
+    else:
+        raise HTTPException(status_code=400, detail='Either minutes or start_time/end_time must be provided')
+
+    # Generate cache key including time mode
+    if time_mode == 'range':
+        cache_key = _get_cache_key('flashes', start_time=start_time, end_time=end_time, bbox=bbox, limit=limit)
+    else:
+        cache_key = _get_cache_key('flashes', minutes=minutes, bbox=bbox, limit=limit)
 
     # Try cache first if enabled
     if use_cache:
@@ -205,14 +240,19 @@ def get_flashes(
             except Exception:
                 raise HTTPException(status_code=400, detail='Invalid bbox format. Use minLon,minLat,maxLon,maxLat')
 
-        now_utc = datetime.now(timezone.utc)
-        window_start = now_utc - timedelta(minutes=minutes)
-
         # Try to get data from database with retries
         try:
             with _connect_with_retry() as conn:
                 cur = conn.cursor()
-                # Pull a superset (recent inserts) to keep it fast, then filter precisely in Python.
+                # For time range queries, we need a larger lookback to ensure we get all data
+                if time_mode == 'range':
+                    # Calculate how far back to look in the database
+                    now_utc = datetime.now(timezone.utc)
+                    lookback_hours = max(1, int((now_utc - window_start).total_seconds() / 3600) + 1)
+                    lookback_str = f'-{lookback_hours} hours'
+                else:
+                    lookback_str = '-1 day'
+
                 cur.execute(
                     '''
                     SELECT file_name,
@@ -225,8 +265,9 @@ def get_flashes(
                            flash_time_offset_of_first_event,
                            flash_time_offset
                     FROM glm_flashes
-                    WHERE created_at >= datetime('now', '-1 day')
-                    '''
+                    WHERE created_at >= datetime('now', ?)
+                    ''',
+                    (lookback_str,)
                 )
                 rows = cur.fetchall()
         except sqlite3.OperationalError as db_error:
@@ -248,6 +289,8 @@ def get_flashes(
                 raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
 
         features: List[Dict[str, Any]] = []
+        now_utc = datetime.now(timezone.utc)
+
         for row in rows:
             feat = _row_to_feature(row, now_utc)
             if not feat:
@@ -255,7 +298,7 @@ def get_flashes(
             # time filter
             t_iso = feat['properties']['time_iso']
             t_utc = datetime.fromisoformat(t_iso.replace('Z', '+00:00'))
-            if t_utc < window_start or t_utc > now_utc + timedelta(minutes=5):
+            if t_utc < window_start or t_utc > window_end:
                 continue
             # bbox filter
             if bbox_tuple:
@@ -266,7 +309,16 @@ def get_flashes(
             if len(features) >= limit:
                 break
 
-        result = {'type': 'FeatureCollection', 'features': features, '_from_cache': False}
+        result = {
+            'type': 'FeatureCollection',
+            'features': features,
+            '_from_cache': False,
+            'time_range': {
+                'start': window_start.isoformat(),
+                'end': window_end.isoformat(),
+                'mode': time_mode
+            }
+        }
 
         # Cache the result
         if use_cache:
