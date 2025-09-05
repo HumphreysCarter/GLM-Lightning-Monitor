@@ -1,5 +1,4 @@
 // ====== Config ======
-const API_BASE = 'http://localhost:8000'; // change if API is elsewhere
 const DEFAULT_AUTO_SEC = 60;              // auto-refresh cadence
 
 // ====== DOM helpers ======
@@ -55,7 +54,22 @@ const ringsLayer = L.layerGroup().addTo(map);
 // If null → rings follow map center; if set → pinned center {lat, lng}
 let ringCenter = null;
 
+// ====== Color legend generation ======
+function updateColorLegend() {
+    const scaleEl = $('colorScale');
+    if (!scaleEl) return;
 
+    // Generate the same gradient that matches the HSL colors in colorForAge
+    // HSL goes from hue 0 (red) to hue 220 (blue)
+    const steps = [];
+    for (let i = 0; i <= 20; i++) {
+        const t = i / 20;
+        const hue = 0 + (220 * t);
+        steps.push(`hsl(${hue}, 100%, 50%) ${(t * 100).toFixed(1)}%`);
+    }
+
+    scaleEl.style.background = `linear-gradient(90deg, ${steps.join(', ')})`;
+}
 
 function saveRingsState() {
   try {
@@ -82,7 +96,6 @@ function restoreRingsState() {
     }
   } catch {}
 }
-
 
 function saveMapView() {
     try {
@@ -222,7 +235,6 @@ function drawRings() {
   ringsStatusEl.textContent = `Center ${c.lat.toFixed(3)}, ${c.lng.toFixed(3)} · ${maxMi} mi`;
 }
 
-
 // ====== Fetch & render ======
 async function fetchAndRender() {
     // cancel any inflight fetch
@@ -257,7 +269,7 @@ async function fetchAndRender() {
         // Build a fresh set of keys for this render
         const newKeys = new Set();
 
-// Draw
+        // Draw
         layer.clearLayers();
         if (lastGeoJsonLayer) lastGeoJsonLayer.remove();
 
@@ -339,8 +351,8 @@ map.on('moveend', () => {
     saveMapView();
 
     if (!ringCenter) {    // follow map center unless pinned
-    drawRings();
-  }
+        drawRings();
+    }
 
     // refetch
     if (moveDebounce) clearTimeout(moveDebounce);
@@ -355,7 +367,6 @@ ringsCenterBtn.addEventListener('click', () => {
   drawRings();
 });
 
-
 // ====== Initial boot ======
 intervalEl.value = DEFAULT_AUTO_SEC;
 autoEl.checked = true;
@@ -364,7 +375,7 @@ autoEl.checked = true;
 restoreMapView();
 restoreRingsState(); // pull from localStorage if present
 drawRings();         // draw initial rings state
+updateColorLegend(); // set up the proper color legend
 
 fetchAndRender();
 startAuto();
-
