@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_CMD=("uvicorn" "src.api_server:app" "--host" "0.0.0.0" "--port" "8000" "--workers" "${UVICORN_WORKERS:-2}")
+API_CMD=("uvicorn" "src.api_server:app" "--host" "0.0.0.0" "--port" "${API_PORT}" "--workers" "${UVICORN_WORKERS}")
 WORKER_CMD=("python" "-m" "src.glm_ingest")
 
 echo "[entry] starting API: ${API_CMD[*]}"

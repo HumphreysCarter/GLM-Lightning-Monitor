@@ -10,8 +10,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
-from .settings import DB_PATH, INGEST_REFRESH_SECONDS
-
+from .settings import DB_PATH, INGEST_REFRESH_SECONDS, BUCKET_NAME, PREFIX, MAX_FILES, INGEST_RECENT_HOURS, RETENTION_HOURS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -569,17 +568,13 @@ class GLMProcessor:
 def main():
     """Example usage of GLMProcessor."""
 
-    # Configuration for public NOAA GOES-19 bucket
-    BUCKET_NAME = "noaa-goes19"
-    PREFIX = "GLM-L2-LCFA/"
-    MAX_FILES = 10
-    NUM_HOURS = 6
-
     # Initialize processor for public bucket (no credentials needed)
+    logger.info(f'Starting GLM ingest for {BUCKET_NAME}')
+
     processor = GLMProcessor(bucket_name=BUCKET_NAME, use_unsigned=True)
 
     # Process files
-    processor.process_files(prefix=PREFIX, max_files=MAX_FILES, recent_hours=NUM_HOURS)
+    processor.process_files(prefix=PREFIX, max_files=MAX_FILES, recent_hours=INGEST_RECENT_HOURS)
 
     # Print summary
     summary = get_data_summary()
@@ -588,9 +583,10 @@ def main():
         print(f"  {table}: {count:,} records")
 
     # Purge old data
-    purge_old_data(max_age_hours=6)
+    purge_old_data(max_age_hours=RETENTION_HOURS)
 
 if __name__ == "__main__":
     while True:
         main()
+        logger.info(f'Waiting {INGEST_REFRESH_SECONDS} seconds before refetching')
         time.sleep(INGEST_REFRESH_SECONDS)
