@@ -7,10 +7,12 @@ import sqlite3
 import tempfile
 import netCDF4 as nc
 import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
-from .settings import DB_PATH, INGEST_REFRESH_SECONDS, BUCKET_NAME, PREFIX, MAX_FILES, INGEST_RECENT_HOURS, RETENTION_HOURS
+from .settings import DB_PATH, INGEST_REFRESH_SECONDS, BUCKET_NAME, PREFIX, MAX_FILES, INGEST_RECENT_HOURS, \
+    RETENTION_HOURS, DATA_BOUNDS
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,6 +31,80 @@ def _recent_glm_prefixes(root_prefix: str, recent_hours: int = 24) -> list[str]:
         hh = dt.strftime('%H')
         prefixes.append(f'{root}/{yyyy}/{ddd}/{hh}/')
     return list(dict.fromkeys(prefixes))
+
+
+def _within_bounds(lon: float, lat: float, bounds: tuple[float, float, float, float]) -> bool:
+    """Check if point is within geographic bounds."""
+    min_lon, min_lat, max_lon, max_lat = bounds
+    return (min_lon <= lon <= max_lon) and (min_lat <= lat <= max_lat)
+
+
+def _filter_data_by_bounds(data: Dict[str, Any], bounds: tuple[float, float, float, float]) -> Dict[str, Any]:
+    """Filter extracted data by geographic bounds."""
+    if not bounds:
+        return data
+
+    min_lon, min_lat, max_lon, max_lat = bounds
+    filtered_data = {}
+
+    logger.info(f"Applying geographic filter: lon=[{min_lon:.2f}, {max_lon:.2f}], lat=[{min_lat:.2f}, {max_lat:.2f}]")
+
+    # Filter events data
+    if 'events' in data and len(data['events']['event_id']) > 0:
+        events = data['events']
+        lons = events['event_lon']
+        lats = events['event_lat']
+
+        # Create boolean mask for points within bounds
+        mask = ((lons >= min_lon) & (lons <= max_lon) &
+                (lats >= min_lat) & (lats <= max_lat))
+
+        if np.any(mask):
+            filtered_events = {}
+            for key, values in events.items():
+                filtered_events[key] = values[mask]
+            filtered_data['events'] = filtered_events
+            logger.info(f"Events: {len(events['event_id'])} → {len(filtered_events['event_id'])} (within bounds)")
+        else:
+            logger.info(f"Events: {len(events['event_id'])} → 0 (none within bounds)")
+
+    # Filter groups data
+    if 'groups' in data and len(data['groups']['group_id']) > 0:
+        groups = data['groups']
+        lons = groups['group_lon']
+        lats = groups['group_lat']
+
+        mask = ((lons >= min_lon) & (lons <= max_lon) &
+                (lats >= min_lat) & (lats <= max_lat))
+
+        if np.any(mask):
+            filtered_groups = {}
+            for key, values in groups.items():
+                filtered_groups[key] = values[mask]
+            filtered_data['groups'] = filtered_groups
+            logger.info(f"Groups: {len(groups['group_id'])} → {len(filtered_groups['group_id'])} (within bounds)")
+        else:
+            logger.info(f"Groups: {len(groups['group_id'])} → 0 (none within bounds)")
+
+    # Filter flashes data
+    if 'flashes' in data and len(data['flashes']['flash_id']) > 0:
+        flashes = data['flashes']
+        lons = flashes['flash_lon']
+        lats = flashes['flash_lat']
+
+        mask = ((lons >= min_lon) & (lons <= max_lon) &
+                (lats >= min_lat) & (lats <= max_lat))
+
+        if np.any(mask):
+            filtered_flashes = {}
+            for key, values in flashes.items():
+                filtered_flashes[key] = values[mask]
+            filtered_data['flashes'] = filtered_flashes
+            logger.info(f"Flashes: {len(flashes['flash_id'])} → {len(filtered_flashes['flash_id'])} (within bounds)")
+        else:
+            logger.info(f"Flashes: {len(flashes['flash_id'])} → 0 (none within bounds)")
+
+    return filtered_data
 
 
 def init_database():
@@ -179,9 +255,25 @@ def init_database():
                        DEFAULT
                        CURRENT_TIMESTAMP,
                        error_message
-                       TEXT
+                       TEXT,
+                       records_filtered
+                       INTEGER
+                       DEFAULT
+                       0,
+                       records_inserted
+                       INTEGER
+                       DEFAULT
+                       0
                    )
                    ''')
+
+    # Add new columns to processing_log if they don't exist
+    cursor.execute('PRAGMA table_info(processing_log)')
+    existing_cols = {row[1] for row in cursor.fetchall()}
+    if 'records_filtered' not in existing_cols:
+        cursor.execute('ALTER TABLE processing_log ADD COLUMN records_filtered INTEGER DEFAULT 0')
+    if 'records_inserted' not in existing_cols:
+        cursor.execute('ALTER TABLE processing_log ADD COLUMN records_inserted INTEGER DEFAULT 0')
 
     # Create indexes for better query performance
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_events_time ON glm_events(event_time_offset)')
@@ -217,15 +309,16 @@ def is_file_processed(file_name: str) -> bool:
     return result is not None
 
 
-def log_processing(file_name: str, file_size: int, status: str, error_message: str = None):
-    """Log file processing status."""
+def log_processing(file_name: str, file_size: int, status: str, error_message: str = None,
+                   records_filtered: int = 0, records_inserted: int = 0):
+    """Log file processing status with filtering statistics."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT OR REPLACE INTO processing_log 
-        (file_name, file_size, processing_status, processing_time, error_message)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (file_name, file_size, status, datetime.now(timezone.utc), error_message))
+        (file_name, file_size, processing_status, processing_time, error_message, records_filtered, records_inserted)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (file_name, file_size, status, datetime.now(timezone.utc), error_message, records_filtered, records_inserted))
     conn.commit()
     conn.close()
 
@@ -294,15 +387,37 @@ def extract_glm_data(file_path: str) -> Dict[str, Any]:
                 pass
 
 
-def insert_data_to_db(file_name: str, data: Dict[str, Any]):
-    """Insert extracted data into SQLite database."""
+def insert_data_to_db(file_name: str, data: Dict[str, Any]) -> tuple[int, int]:
+    """
+    Insert extracted data into SQLite database.
+    Returns (records_filtered, records_inserted) for logging.
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    records_filtered = 0
+    records_inserted = 0
+
     try:
+        # Calculate original record counts for filtering stats
+        original_events = len(data.get('events', {}).get('event_id', []))
+        original_groups = len(data.get('groups', {}).get('group_id', []))
+        original_flashes = len(data.get('flashes', {}).get('flash_id', []))
+
+        # Apply geographic filtering
+        filtered_data = _filter_data_by_bounds(data, DATA_BOUNDS)
+
+        # Calculate filtered record counts
+        filtered_events = len(filtered_data.get('events', {}).get('event_id', []))
+        filtered_groups = len(filtered_data.get('groups', {}).get('group_id', []))
+        filtered_flashes = len(filtered_data.get('flashes', {}).get('flash_id', []))
+
+        records_filtered = (original_events + original_groups + original_flashes) - \
+                           (filtered_events + filtered_groups + filtered_flashes)
+
         # Insert events data
-        if 'events' in data and len(data['events']['event_id']) > 0:
-            events_df = pd.DataFrame(data['events'])
+        if 'events' in filtered_data and filtered_events > 0:
+            events_df = pd.DataFrame(filtered_data['events'])
             events_df['file_name'] = file_name
             events_df.to_sql('glm_events', conn, if_exists='append', index=False,
                              dtype={
@@ -314,10 +429,11 @@ def insert_data_to_db(file_name: str, data: Dict[str, Any]):
                                  'parent_group_id': 'REAL'
                              })
             logger.info(f"Inserted {len(events_df)} events from {file_name}")
+            records_inserted += len(events_df)
 
         # Insert groups data
-        if 'groups' in data and len(data['groups']['group_id']) > 0:
-            groups_df = pd.DataFrame(data['groups'])
+        if 'groups' in filtered_data and filtered_groups > 0:
+            groups_df = pd.DataFrame(filtered_data['groups'])
             groups_df['file_name'] = file_name
             groups_df.to_sql('glm_groups', conn, if_exists='append', index=False,
                              dtype={
@@ -331,10 +447,11 @@ def insert_data_to_db(file_name: str, data: Dict[str, Any]):
                                  'parent_flash_id': 'REAL'
                              })
             logger.info(f"Inserted {len(groups_df)} groups from {file_name}")
+            records_inserted += len(groups_df)
 
         # Insert flashes data
-        if 'flashes' in data and len(data['flashes']['flash_id']) > 0:
-            flashes_df = pd.DataFrame(data['flashes'])
+        if 'flashes' in filtered_data and filtered_flashes > 0:
+            flashes_df = pd.DataFrame(filtered_data['flashes'])
             flashes_df['file_name'] = file_name
             flashes_df.to_sql('glm_flashes', conn, if_exists='append', index=False,
                               dtype={
@@ -347,8 +464,14 @@ def insert_data_to_db(file_name: str, data: Dict[str, Any]):
                                   'flash_quality_flag': 'INTEGER'
                               })
             logger.info(f"Inserted {len(flashes_df)} flashes from {file_name}")
+            records_inserted += len(flashes_df)
 
         conn.commit()
+
+        if records_filtered > 0:
+            logger.info(f"Filtered out {records_filtered} records outside geographic bounds for {file_name}")
+
+        return records_filtered, records_inserted
 
     except Exception as e:
         conn.rollback()
@@ -368,6 +491,14 @@ def get_data_summary() -> Dict[str, int]:
     for table in ['glm_events', 'glm_groups', 'glm_flashes', 'processing_log']:
         cursor.execute(f"SELECT COUNT(*) FROM {table}")
         summary[table] = cursor.fetchone()[0]
+
+    # Add filtering statistics
+    cursor.execute(
+        "SELECT SUM(records_filtered), SUM(records_inserted) FROM processing_log WHERE processing_status = 'success'")
+    result = cursor.fetchone()
+    if result and result[0] is not None:
+        summary['total_records_filtered'] = result[0]
+        summary['total_records_inserted'] = result[1]
 
     conn.close()
     return summary
@@ -421,7 +552,6 @@ def purge_old_data(max_age_hours: int = 12, vacuum: bool = True) -> dict:
     return stats
 
 
-
 class GLMProcessor:
     """Process GLM data from AWS S3 to SQLite database."""
 
@@ -452,6 +582,14 @@ class GLMProcessor:
 
         # Initialize database
         init_database()
+
+        # Log the geographic bounds being used
+        if DATA_BOUNDS:
+            min_lon, min_lat, max_lon, max_lat = DATA_BOUNDS
+            logger.info(
+                f"Geographic filtering enabled: lon=[{min_lon:.2f}, {max_lon:.2f}], lat=[{min_lat:.2f}, {max_lat:.2f}]")
+        else:
+            logger.info("No geographic filtering - ingesting global data")
 
     def list_s3_files(self, prefix: str = 'GLM-L2-LCFA/', max_files: int = 10, recent_hours: int = 24) -> list[str]:
         '''
@@ -513,9 +651,11 @@ class GLMProcessor:
             data = extract_glm_data(temp_path)
 
             if data:
-                insert_data_to_db(file_name, data)
-                log_processing(file_name, file_size, 'success')
-                logger.info(f'Successfully processed {file_name}')
+                records_filtered, records_inserted = insert_data_to_db(file_name, data)
+                log_processing(file_name, file_size, 'success',
+                               records_filtered=records_filtered, records_inserted=records_inserted)
+                logger.info(
+                    f'Successfully processed {file_name} - inserted {records_inserted} records, filtered {records_filtered}')
                 return True
             else:
                 log_processing(file_name, file_size, 'failed', 'No data extracted')
@@ -565,6 +705,7 @@ class GLMProcessor:
                 success_count += 1
         logger.info(f'Completed processing: {success_count}/{len(files)} files successful')
 
+
 def main():
     """Example usage of GLMProcessor."""
 
@@ -584,6 +725,7 @@ def main():
 
     # Purge old data
     purge_old_data(max_age_hours=RETENTION_HOURS)
+
 
 if __name__ == "__main__":
     while True:
