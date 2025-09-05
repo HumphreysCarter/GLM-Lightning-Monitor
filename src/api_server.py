@@ -395,10 +395,9 @@ def flashes_nearby(
             'avg_distance_miles': avg_dist,
             'min_distance_miles': min_dist,
             'max_distance_miles': max_dist,
-            '_from_cache': False,
         }
 
-        # Cache the result
+        # Cache the fresh result from database for potential future fallback
         if use_cache:
             _set_cache(cache_key, result.copy())
 

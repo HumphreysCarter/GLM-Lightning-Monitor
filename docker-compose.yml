@@ -6,20 +6,20 @@ services:
       context: .
       dockerfile: Dockerfile
     environment:
-      - UVICORN_WORKERS=2
-      - INGEST_BUCKET=noaa-goes19
-      - INGEST_PREFIX=GLM-L2-LCFA/
-      - INGEST_RECENT_HOURS=6
-      - INGEST_MAX_FILES=25
-      - INGEST_POLL_SEC=60
-      - RETENTION_HOURS=12
-      - PYTHONUNBUFFERED=1
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
+      - INGEST_BUCKET=${INGEST_BUCKET:-noaa-goes19}
+      - INGEST_PREFIX=${INGEST_PREFIX:-GLM-L2-LCFA/}
+      - INGEST_RECENT_HOURS=${INGEST_RECENT_HOURS:-6}
+      - INGEST_MAX_FILES=${INGEST_MAX_FILES:-25}
+      - INGEST_POLL_SEC=${INGEST_POLL_SEC:-60}
+      - RETENTION_HOURS=${RETENTION_HOURS:-12}
+      - PYTHONUNBUFFERED=${PYTHONUNBUFFERED:-1}
     volumes:
       - glm_data:/app/data
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${API_PORT:-8000}/health"]
       interval: 60s
       retries: 5
       start_period: 5s
@@ -31,7 +31,7 @@ services:
     depends_on:
       - glm-data-api
     ports:
-      - "8080:80"
+      - "${APP_PORT:-8080}:80"
     volumes:
       - ./html:/usr/share/nginx/html:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
