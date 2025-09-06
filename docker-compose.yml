@@ -16,6 +16,7 @@ services:
       - RETENTION_HOURS=${RETENTION_HOURS:-12}
     volumes:
       - glm_data:/app/data
+      - ${LOCAL_DATA_PATH:-/dev/null}:/app/local_data:ro
     ports:
       - "${API_PORT:-8000}:80"
     healthcheck:
