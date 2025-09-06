@@ -9,14 +9,22 @@ import netCDF4 as nc
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+from pathlib import Path
 
 from .settings import DB_PATH, INGEST_REFRESH_SECONDS, BUCKET_NAME, PREFIX, MAX_FILES, INGEST_RECENT_HOURS, \
-    RETENTION_HOURS, DATA_BOUNDS
+    RETENTION_HOURS, DATA_BOUNDS, LOCAL_DATA_PATH
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Check for local data directory in container
+if LOCAL_DATA_PATH.exists() and LOCAL_DATA_PATH.is_dir():
+    logger.info(f"Local data mode enabled: {LOCAL_DATA_PATH}")
+else:
+    LOCAL_DATA_PATH = None
+    logger.info("Local data mode disabled - using AWS S3")
 
 
 def _recent_glm_prefixes(root_prefix: str, recent_hours: int = 24) -> list[str]:
@@ -553,32 +561,40 @@ def purge_old_data(max_age_hours: int = 12, vacuum: bool = True) -> dict:
 
 
 class GLMProcessor:
-    """Process GLM data from AWS S3 to SQLite database."""
+    """Process GLM data from local files or AWS S3 to SQLite database."""
 
-    def __init__(self, bucket_name: str, aws_profile: Optional[str] = None,
-                 use_unsigned: bool = True):
+    def __init__(self, bucket_name: str = None, aws_profile: Optional[str] = None,
+                 use_unsigned: bool = True, local_data_path: Optional[Path] = None):
         """
         Initialize GLM processor.
 
         Args:
-            bucket_name: S3 bucket containing GLM data
-            db_path: Path to SQLite database file
+            bucket_name: S3 bucket containing GLM data (optional if using local data)
             aws_profile: AWS profile name (optional)
             use_unsigned: Use unsigned requests for public buckets (no credentials needed)
+            local_data_path: Path to local data directory (overrides environment variable)
         """
-        self.bucket_name = bucket_name
+        # Set up local data path
+        self.local_data_path = local_data_path or LOCAL_DATA_PATH
 
-        # Initialize AWS S3 client
-        if use_unsigned:
-            # For public buckets - no credentials required
-            from botocore import UNSIGNED
-            from botocore.config import Config
-            self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
-            logger.info("Using unsigned requests for public S3 bucket")
+        if self.local_data_path:
+            logger.info(f"Using local data source: {self.local_data_path}")
+            self.s3_client = None
+            self.bucket_name = None
         else:
-            # For private buckets - use credentials
-            session = boto3.Session(profile_name=aws_profile) if aws_profile else boto3.Session()
-            self.s3_client = session.client('s3')
+            # Initialize AWS S3 client for remote data
+            self.bucket_name = bucket_name
+
+            if use_unsigned:
+                # For public buckets - no credentials required
+                from botocore import UNSIGNED
+                from botocore.config import Config
+                self.s3_client = boto3.client('s3', config=Config(signature_version=UNSIGNED))
+                logger.info("Using unsigned requests for public S3 bucket")
+            else:
+                # For private buckets - use credentials
+                session = boto3.Session(profile_name=aws_profile) if aws_profile else boto3.Session()
+                self.s3_client = session.client('s3')
 
         # Initialize database
         init_database()
@@ -591,10 +607,49 @@ class GLMProcessor:
         else:
             logger.info("No geographic filtering - ingesting global data")
 
+    def list_local_files(self, prefix: str = 'GLM-L2-LCFA', max_files: int = 10) -> List[str]:
+        """
+        List local .nc files, returning the most recently modified ones.
+
+        Args:
+            max_files: Maximum number of files to return
+
+        Returns:
+            List of file paths sorted by modification time (newest first)
+        """
+        if not self.local_data_path or not self.local_data_path.exists():
+            logger.warning(f"Local data path does not exist: {self.local_data_path}")
+            return []
+
+        try:
+            # Find all .nc files recursively
+            nc_files = []
+            logger.info(f'Checking for GLM files with prefix: {prefix}')
+
+            for nc_file in self.local_data_path.rglob("*.nc"):
+                if nc_file.is_file() and prefix in nc_file.name.upper():
+                    nc_files.append(nc_file)
+
+            # Sort by modification time (newest first) and limit
+            nc_files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+            nc_files = nc_files[:max_files]
+
+            file_paths = [str(f) for f in nc_files]
+            logger.info(f'Found {len(file_paths)} local GLM files')
+            return file_paths
+
+        except Exception as e:
+            logger.error(f'Error listing local files: {e}')
+            return []
+
     def list_s3_files(self, prefix: str = 'GLM-L2-LCFA/', max_files: int = 10, recent_hours: int = 24) -> list[str]:
         '''
         Return newest GLM .nc object keys by scanning recent hour prefixes only.
         '''
+        if not self.s3_client:
+            logger.error("S3 client not initialized - cannot list S3 files")
+            return []
+
         try:
             prefixes = _recent_glm_prefixes(prefix, recent_hours)
             top_n: list[tuple[float, str]] = []  # (timestamp, key)
@@ -625,7 +680,44 @@ class GLMProcessor:
             logger.error(f'Error listing S3 files: {e}')
             return []
 
-    def process_file(self, s3_key: str) -> bool:
+    def process_local_file(self, file_path: str) -> bool:
+        """Process a local .nc file."""
+        file_name = os.path.basename(file_path)
+
+        if is_file_processed(file_name):
+            logger.info(f'Skipping {file_name} - already processed')
+            return True
+
+        try:
+            logger.info(f'Processing local file: {file_name}')
+
+            # Get file size
+            file_size = os.path.getsize(file_path)
+            logger.info(f'Processing {file_name} ({file_size:,} bytes)')
+
+            # Extract data directly from local file
+            data = extract_glm_data(file_path)
+
+            if data:
+                records_filtered, records_inserted = insert_data_to_db(file_name, data)
+                log_processing(file_name, file_size, 'success',
+                               records_filtered=records_filtered, records_inserted=records_inserted)
+                logger.info(
+                    f'Successfully processed {file_name} - inserted {records_inserted} records, filtered {records_filtered}')
+                return True
+            else:
+                log_processing(file_name, file_size, 'failed', 'No data extracted')
+                logger.warning(f'No data extracted from {file_name}')
+                return False
+
+        except Exception as e:
+            error_msg = str(e)
+            log_processing(file_name, 0, 'error', error_msg)
+            logger.error(f'Error processing {file_name}: {error_msg}')
+            return False
+
+    def process_s3_file(self, s3_key: str) -> bool:
+        """Process an S3 file (original logic)."""
         file_name = os.path.basename(s3_key)
 
         if is_file_processed(file_name):
@@ -634,7 +726,7 @@ class GLMProcessor:
 
         temp_path = None
         try:
-            logger.info(f'Processing {file_name}')
+            logger.info(f'Processing S3 file: {file_name}')
 
             import uuid
             temp_dir = tempfile.gettempdir()
@@ -693,29 +785,52 @@ class GLMProcessor:
                                 logger.warning(f'Temp file {temp_path} left in system - manual cleanup may be needed')
 
     def process_files(self, prefix: str = 'GLM-L2-LCFA/', max_files: int = 10, recent_hours: int = 6):
-        files = self.list_s3_files(prefix=prefix, max_files=max_files, recent_hours=recent_hours)
-        if not files:
-            logger.warning('No GLM files found')
-            return
-        logger.info(f'Processing {len(files)} files...')
-        success_count = 0
-        for i, s3_key in enumerate(files, 1):
-            logger.info(f'Processing file {i}/{len(files)}: {s3_key}')
-            if self.process_file(s3_key):
-                success_count += 1
+        """Process files from either local directory or S3."""
+
+        if self.local_data_path:
+            # Process local files
+            files = self.list_local_files(max_files=max_files)
+            if not files:
+                logger.warning('No local GLM files found')
+                return
+
+            logger.info(f'Processing {len(files)} local files...')
+            success_count = 0
+            for i, file_path in enumerate(files, 1):
+                logger.info(f'Processing local file {i}/{len(files)}: {os.path.basename(file_path)}')
+                if self.process_local_file(file_path):
+                    success_count += 1
+
+        else:
+            # Process S3 files (original logic)
+            files = self.list_s3_files(prefix=prefix, max_files=max_files, recent_hours=recent_hours)
+            if not files:
+                logger.warning('No S3 GLM files found')
+                return
+
+            logger.info(f'Processing {len(files)} S3 files...')
+            success_count = 0
+            for i, s3_key in enumerate(files, 1):
+                logger.info(f'Processing S3 file {i}/{len(files)}: {s3_key}')
+                if self.process_s3_file(s3_key):
+                    success_count += 1
+
         logger.info(f'Completed processing: {success_count}/{len(files)} files successful')
 
 
 def main():
-    """Example usage of GLMProcessor."""
+    """Main processing function that handles both local and S3 data sources."""
 
-    # Initialize processor for public bucket (no credentials needed)
-    logger.info(f'Starting GLM ingest for {BUCKET_NAME}')
-
-    processor = GLMProcessor(bucket_name=BUCKET_NAME, use_unsigned=True)
-
-    # Process files
-    processor.process_files(prefix=PREFIX, max_files=MAX_FILES, recent_hours=INGEST_RECENT_HOURS)
+    if LOCAL_DATA_PATH:
+        logger.info(f'Starting GLM ingest from local data: {LOCAL_DATA_PATH}')
+        processor = GLMProcessor(local_data_path=LOCAL_DATA_PATH)
+        # For local files, process all available files (don't limit by recent hours)
+        processor.process_files(max_files=MAX_FILES)
+    else:
+        logger.info(f'Starting GLM ingest from S3: {BUCKET_NAME}')
+        processor = GLMProcessor(bucket_name=BUCKET_NAME, use_unsigned=True)
+        # For S3, use the normal time-based filtering
+        processor.process_files(prefix=PREFIX, max_files=MAX_FILES, recent_hours=INGEST_RECENT_HOURS)
 
     # Print summary
     summary = get_data_summary()

@@ -33,6 +33,8 @@ def parse_bounds(env_var='DATA_BOUNDS', default=None):
 # Program root path
 PROGRAM_ROOT = Path(__file__).resolve().parent.parent
 
+LOCAL_DATA_PATH = PROGRAM_ROOT / 'local_data'
+
 # GLM database path
 DB_PATH = PROGRAM_ROOT / 'data' / 'glm_data.db'
 
