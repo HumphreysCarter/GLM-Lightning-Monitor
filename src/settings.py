@@ -29,6 +29,8 @@ def parse_bounds(env_var='DATA_BOUNDS', default=None):
 
     return bounds
 
+API_PORT = int(os.environ.get('API_PORT', 8000))
+
 
 # Program root path
 PROGRAM_ROOT = Path(__file__).resolve().parent.parent
@@ -58,3 +60,16 @@ RETENTION_HOURS = int(os.environ.get('RETENTION_HOURS', '6'))
 
 # Get data bounds
 DATA_BOUNDS = parse_bounds(default=(-131.5, 18.8, -62.8, 52.2))
+
+# Email settings
+NOTIFY_EMAILS = os.getenv('NOTIFY_EMAILS', None)
+EMAIL_SERVER = os.environ.get('EMAIL_SERVER', None)
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 0))
+EMAIL_USER = os.environ.get('EMAIL_USER', None)
+EMAIL_PASS = os.environ.get('EMAIL_PASS', None)
+
+# Location to watch
+WATCH_LATITUDE = float(os.environ.get('WATCH_LATITUDE', None))
+WATCH_LONGITUDE = float(os.environ.get('WATCH_LONGITUDE', None))
+NOTIFY_WITHIN_MILES = int(os.environ.get('NOTIFY_WITHIN_MILES', 25))
+CHECK_LAST_MINUTES = int(os.environ.get('CHECK_LAST_MINUTES', 5))
