@@ -147,15 +147,14 @@ function restoreBasemap() {
     }
 }
 
-// ====== Time loop functions ======
+// ====== Time loop functions (Modified for continuous looping) ======
 function startTimeLoop() {
     if (loopTimer) clearInterval(loopTimer);
 
-    const now = Date.now();
     const windowMinutes = Number(minutesEl.value || 30);
 
     // Start from 60 minutes ago
-    loopCurrentTime = now - (60 * 60 * 1000);
+    loopCurrentTime = Date.now() - (60 * 60 * 1000);
     loopIsPlaying = true;
     loopPlayBtn.textContent = 'Pause';
 
@@ -173,16 +172,27 @@ function startTimeLoop() {
         const stepMinutes = Number(loopIntervalEl.value || 5);
         loopCurrentTime += stepMinutes * 60 * 1000;
 
-        // Stop when we reach current time
+        // Get current time (updated each iteration for continuous loop)
+        const now = Date.now();
+
+        // If we've reached current time and loop is still checked, restart from beginning
         if (loopCurrentTime >= now) {
-            stopTimeLoop();
-            return;
+            if (timeLoopEl.checked) {
+                // Restart the loop from 60 minutes ago for continuous looping
+                loopCurrentTime = now - (60 * 60 * 1000);
+                loopStatusEl.textContent = 'Loop restarting...';
+            } else {
+                // Stop if loop checkbox was unchecked
+                stopTimeLoop();
+                return;
+            }
         }
 
         fetchLoopData();
     }, 1000); // 1 second between steps
 }
 
+// Modified stopTimeLoop to handle continuous loop state
 function stopTimeLoop() {
     if (loopTimer) {
         clearInterval(loopTimer);
@@ -193,8 +203,10 @@ function stopTimeLoop() {
     loopPlayBtn.textContent = 'Play';
     loopStatusEl.textContent = '';
 
-    // Re-enable normal fetching
-    fetchAndRender();
+    // Re-enable normal fetching only if we're not in continuous loop mode
+    if (!timeLoopEl.checked) {
+        fetchAndRender();
+    }
 }
 
 function stepTimeLoop() {
@@ -244,10 +256,8 @@ async function fetchLoopData() {
     if (bbox) params.set('bbox', bbox);
     const url = `${API_BASE}/api/flashes?${params.toString()}`;
 
-    // Update status to show current loop time
-    const timeStr = new Date(loopCurrentTime).toLocaleTimeString();
-    const ageMinutesAgo = Math.round((Date.now() - loopCurrentTime) / 60000);
-    loopStatusEl.textContent = `Showing: ${timeStr} (${ageMinutesAgo} min ago)`;
+    // Update status to show current loop time with continuous indicator
+    updateLoopStatus();
     setBaseStatus('Loading loop data…');
 
     try {
@@ -622,8 +632,13 @@ basemapSelect.addEventListener('change', () => {
 
 // ====== Time loop event listeners ======
 timeLoopEl.addEventListener('change', () => {
-    if (!timeLoopEl.checked && loopIsPlaying) {
-        stopTimeLoop();
+    if (!timeLoopEl.checked) {
+        // When unchecked, stop the loop and return to normal mode
+        if (loopIsPlaying) {
+            stopTimeLoop();
+        }
+        // Return to normal fetching
+        fetchAndRender();
     }
     saveLoopSettings();
 });
@@ -636,11 +651,33 @@ loopPlayBtn.addEventListener('click', () => {
     }
 
     if (loopIsPlaying) {
-        stopTimeLoop();
+        // Pause the loop but keep checkbox checked for continuous mode
+        if (loopTimer) {
+            clearInterval(loopTimer);
+            loopTimer = null;
+        }
+        loopIsPlaying = false;
+        loopPlayBtn.textContent = 'Play';
+        loopStatusEl.textContent = 'Loop paused';
     } else {
         startTimeLoop();
     }
 });
+
+// Optional: Add a visual indicator for continuous loop mode
+function updateLoopStatus() {
+    if (!timeLoopEl.checked) {
+        loopStatusEl.textContent = '';
+        return;
+    }
+
+    if (!loopCurrentTime) return;
+
+    const timeStr = new Date(loopCurrentTime).toLocaleTimeString();
+    const ageMinutesAgo = Math.round((Date.now() - loopCurrentTime) / 60000);
+
+    loopStatusEl.textContent = `Showing: ${timeStr} (${ageMinutesAgo} min ago)`;
+}
 
 loopStepBtn.addEventListener('click', () => {
     if (!timeLoopEl.checked) {
