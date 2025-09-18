@@ -12,11 +12,11 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY src/ ./src
 
 # 3) Copy scripts
-COPY bin/ /app/.
+COPY bin/ ./bin/
 RUN chmod +x /app/bin/*.sh
 
 # Expose port
 EXPOSE 8000
 
 # Run the application
-CMD ["/app/start.sh"]
+CMD ["/app/bin/start.sh"]
