@@ -19,7 +19,7 @@ services:
       # Notification Settings
       - NOTIFY_EMAILS=${NOTIFY_EMAILS}
       - EMAIL_SERVER=${EMAIL_SERVER}
-      - EMAIL_PORT=${EMAIL_PORT}
+      - EMAIL_PORT=${EMAIL_PORT:-465}
       - EMAIL_USER=${EMAIL_USER}
       - EMAIL_PASS=${EMAIL_PASS}
       - WATCH_LATITUDE=${WATCH_LATITUDE}
