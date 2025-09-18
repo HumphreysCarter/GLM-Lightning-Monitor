@@ -13,6 +13,7 @@ COPY src/ ./src
 
 # 3) Copy scripts
 COPY bin/ /app/.
+RUN chmod +x /app/bin/*.sh
 
 # Expose port
 EXPOSE 8000
