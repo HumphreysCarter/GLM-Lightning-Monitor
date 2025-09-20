@@ -10,79 +10,136 @@
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 
     <!-- GLM Monitor CSS -->
-    <link rel="stylesheet" href="glm-monitor.css"/>
+    <link rel="stylesheet" href="css/glm-monitor.css"/>
+
+    <!-- NWS Warnings CSS -->
+    <link rel="stylesheet" href="css/nws-warnings.css">
 </head>
 <body>
-<div id="map"></div>
+<main>
+    <div id="map"></div>
 
-<div class="basemap-toggle">
-    <label for="basemap-select">Background:</label>
-    <select id="basemap-select">
-        <option value="CARTO Dark">CARTO Dark</option>
-        <option value="OpenStreetMap">OpenStreetMap</option>
-        <option value="Google Satellite">Google Satellite</option>
-        <option value="Google Terrain">Google Terrain</option>
-    </select>
-</div>
+    <div class='panel' role='region' aria-label='GLM Lightning Monitor controls'>
+        <div class='panel-header'>
+            <h1 id='panel-title'>GLM Lightning Monitor</h1>
 
-<div class="panel">
-    <h1>GLM Lightning Monitor</h1>
-    <div class="row">
-        <label for="minutes">Show Last:</label>
-        <input id="minutes" type="number" min="1" max="1440" value="30"/>
-        <label>minutes</label>
-    </div>
-    <div class="row">
-        <label for="auto"><input id="auto" type="checkbox" checked/> Auto-refresh</label>
-        <label for="interval">every</label>
-        <input id="interval" type="number" min="2" max="300" value="60"/>
-        <label>sec</label>
-        <button id="refresh" class="primary">Refresh Now</button>
-    </div>
-    <div class="row">
-        <label for="rings"><input id="rings" type="checkbox"/> Show range rings</label>
-        <label for="ringsMax">Max mi:</label>
-        <input id="ringsMax" type="number" min="10" max="500" step="10" value="100"/>
-        <button id="ringsCenter" type="button" title="Pin rings to current map center">Center here</button>
-    </div>
-    <div class="row">
-        <span id="ringsStatus" class="status"></span>
+            <!-- Arrow-only toggle on the right -->
+            <button id='toggleControls' class='chevron-btn' type='button' aria-pressed='false'
+                    aria-label='Hide controls' title='Hide controls' aria-controls='panel-controls'>
+
+                <svg class='chevron' viewBox='0 0 24 24' width='24' height='24' aria-hidden='true' focusable='false'>
+                    <path d='M7 10l5 5 5-5' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'
+                          stroke-linejoin='round'/>
+                </svg>
+            </button>
+        </div>
+
+        <div id='panel-controls'>
+            <fieldset class='row'>
+                <legend class='sr-only'>Time Window</legend>
+                <label for='minutes'>Show Last:</label>
+                <input id='minutes' type='number' min='1' max='1440' value='30' inputmode='numeric'/>
+                <span aria-hidden='true'>minutes</span>
+            </fieldset>
+
+            <fieldset class='row'>
+                <legend class='sr-only'>Auto Refresh</legend>
+                <label for='auto'><input id='auto' type='checkbox' checked/> Auto-refresh</label>
+                <label for='interval'>every</label>
+                <input id='interval' type='number' min='2' max='300' value='60' inputmode='numeric'/>
+                <span aria-hidden='true'>sec</span>
+                <button id='refresh' class='primary' type='button'>Refresh Now</button>
+            </fieldset>
+
+            <fieldset class='row'>
+                <legend class='sr-only'>Range Rings</legend>
+                <label for='rings'><input id='rings' type='checkbox'/> Show range rings</label>
+                <label for='ringsMax'>Max mi:</label>
+                <input id='ringsMax' type='number' min='10' max='500' step='10' value='100' inputmode='numeric'/>
+                <button id='ringsCenter' type='button' title='Pin rings to current map center'>Center here</button>
+
+                <span id='ringsStatus' class='status' role='status' aria-live='polite'></span>
+            </fieldset>
+
+            <fieldset class='row'>
+                <legend class='sr-only'>Time Loop</legend>
+                <label for='timeLoop'><input id='timeLoop' type='checkbox'/> Time loop</label>
+                <label for='loopInterval'>Step:</label>
+                <input id='loopInterval' type='number' min='1' max='10' value='5' inputmode='numeric'/>
+                <span aria-hidden='true'>min</span>
+                <button id='loopPlay' type='button'>Play</button>
+                <button id='loopStep' type='button'>Step</button>
+
+                <span id='loopStatus' class='status' role='status' aria-live='polite'></span>
+            </fieldset>
+
+            <fieldset class='row'>
+                <legend class='sr-only'>NWS Watches, Warnings and Advisories</legend>
+                <label>
+                    <input id='toggle-warnings' type='checkbox' checked/> Show Warnings
+                </label>
+            </fieldset>
+
+            <fieldset class='row'>
+                <legend class='sr-only'>Basemap</legend>
+                <label for='basemap-select'>Background:</label>
+                <select id='basemap-select' name='basemap' autocomplete='off'>
+                    <option value='CARTO Dark'>CARTO Dark</option>
+                    <option value='OpenStreetMap'>OpenStreetMap</option>
+                    <option value='Google Satellite'>Google Satellite</option>
+                    <option value='Google Terrain'>Google Terrain</option>
+                </select>
+            </fieldset>
+
+        </div>
+
+        <div id='status' class='status' role='status' aria-live='polite'>Idle.</div>
     </div>
 
-    <div class="row">
-        <label for="timeLoop"><input id="timeLoop" type="checkbox"/> Time loop</label>
-        <label for="loopInterval">Step:</label>
-        <input id="loopInterval" type="number" min="1" max="10" value="5"/>
-        <label>min</label>
-        <button id="loopPlay" type="button">Play</button>
-        <button id="loopStep" type="button">Step</button>
+    <div class="legend">
+        <div><strong>Flash Age</strong></div>
+        <div class="scale" id="colorScale" title="Newest (red) → Oldest (blue)"></div>
+        <div class="legend-row">
+            <span>Newest</span>
+            <span>Oldest</span>
+        </div>
     </div>
-    <div class="row">
-        <span id="loopStatus" class="status"></span>
-    </div>
-
-    <div class="buttons">
-
-    </div>
-    <div id="status" class="status">Idle.</div>
-</div>
-
-<div class="legend">
-    <div><strong>Flash Age</strong></div>
-    <div class="scale" id="colorScale" title="Newest (red) → Oldest (blue)"></div>
-    <div class="legend-row">
-        <span>Newest</span>
-        <span>Oldest</span>
-    </div>
-</div>
+</main>
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
 <!-- GLM Monitor JS -->
-<script src="glm-monitor.js"></script>
+<script type='module' src='javascript/glm-monitor.js'></script>
 
+<!--Collapse/expand all fieldsets in the main panel -->
+<script type='module'>
+    const panel = document.querySelector('.panel');
+    const toggleBtn = document.getElementById('toggleControls');
+    const controls = document.getElementById('panel-controls');
+
+    if (panel && toggleBtn) {
+        // Restore previous state (optional)
+        const saved = localStorage.getItem('glm:panelCollapsed') === 'true';
+        if (saved) {
+            panel.classList.add('collapsed');
+            toggleBtn.setAttribute('aria-pressed', 'true');
+            toggleBtn.setAttribute('aria-label', 'Show controls');
+            if (controls) toggleBtn.setAttribute('aria-expanded', 'false');
+        } else {
+            if (controls) toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+
+        toggleBtn.addEventListener('click', () => {
+            const isCollapsed = panel.classList.toggle('collapsed');
+            toggleBtn.setAttribute('aria-pressed', String(isCollapsed));
+            toggleBtn.setAttribute('aria-label', isCollapsed ? 'Show controls' : 'Hide controls');
+            if (controls) toggleBtn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            localStorage.setItem('glm:panelCollapsed', String(isCollapsed));
+        });
+    }
+</script>
 
 </body>
 </html>
