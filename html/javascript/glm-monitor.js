@@ -49,31 +49,11 @@ const nwsWarnings = new NWSWarnings(map, {
   autoRefresh: true,
   refreshInterval: 60,
   onStatus: ({message, type}) => {
-    // Optional: surface into your existing status UI
-    // setBaseStatus(`NWS: ${message}`, type === 'error' ? 'err' : type === 'ok' ? 'ok' : 'info');
     console.log('[NWS]', type, message);
   }
 });
 
 await nwsWarnings.init();
-
-// (Optional) tie into your existing controls:
-autoEl?.addEventListener('change', () => {
-  nwsWarnings.setOptions({ autoRefresh: autoEl.checked });
-  if (autoEl.checked) nwsWarnings.startAutoRefresh(); else nwsWarnings.stopAutoRefresh();
-});
-intervalEl?.addEventListener('change', () => {
-  nwsWarnings.setOptions({ refreshInterval: Number(intervalEl.value) || 300 });
-});
-
-// (Optional) control visibility programmatically:
-nwsWarnings.setVisibleTypes([
-    'Tornado Warning',
-    'Severe Thunderstorm Warning',
-    'Flash Flood Warning',
-    'Snow Squall Warning',
-    'Special Weather Statement'
-]);
 
 // (Optional) manual refresh when you refresh other layers:
 refreshBtn?.addEventListener('click', () => {
@@ -83,6 +63,19 @@ refreshBtn?.addEventListener('click', () => {
 // toggle from your app:
 nwsWarnings.enable();
 
+// Toggole warnings on or off
+const toggleWarningsEl = $('toggle-warnings');
+if (toggleWarningsEl) {
+    toggleWarningsEl.addEventListener('change', () => {
+        if (toggleWarningsEl.checked) {
+            console.log("Enable warnings")
+            nwsWarnings.enable();
+        } else {
+            console.log("Disable warnings")
+            nwsWarnings.disable();
+        }
+    });
+}
 
 // Initialize with default basemap (CARTO Dark)
 let currentTileLayer = L.tileLayer(BASEMAPS["CARTO Dark"].url, {
