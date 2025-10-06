@@ -10,7 +10,7 @@ class NWSWarnings {
         this.map = map;
         this.options = {
             autoRefresh: true,
-            refreshInterval: 300, // seconds
+            refreshInterval: 60,
             apiBase: 'https://api.weather.gov',
             storagePrefix: 'nws:warnings:',
             ...options
