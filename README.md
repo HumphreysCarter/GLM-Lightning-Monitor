@@ -1,4 +1,5 @@
 # GLM Lightning Monitor
+ A docker-based web application for monitoring lightning from the GOES-R Series satellite Geostationary Lightning Mapper (GLM).
 
 ![Monitor webpage example](docs/monitor_example.png)
 
