@@ -41,7 +41,15 @@ const BASEMAPS = {
 };
 
 // ====== Leaflet map ======
-const map = L.map('map', {worldCopyJump: true, minZoom: 8}).setView([35.45, -97.52], 8);
+const map = L.map('map', {
+    center: [35.45, -97.52],
+    zoom: 8,
+    minZoom: 7,
+    zoomSnap: 0.1,
+    zoomDelta: 0.1,
+    wheelPxPerZoomLevel: 200,
+    worldCopyJump: true,
+});
 
 // --- NWS Warnings ---
 import NWSWarnings from './nws-warnings.js';
